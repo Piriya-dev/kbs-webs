@@ -1,0 +1,14 @@
+<?php
+    // configs/config.php
+    // Confidential - Internal Use Only
+    // Define database connection constants
+    $db_name = "kbs_iot_db";
+    $db_user = "kbs_iot";
+    $db_pass = "@Kbs2024!#";
+   // $db_pass = "5y.7iPlB2awVJ(2K";
+    $db_host = "127.0.0.1";
+
+?>
+
+
+{"site_name":"KPP","station_id":"KPP","sensor_vib1":0.1,"sensor_temp1":35,"sensor_vib2":0.25,"sensor_temp2":32,"sensor_vib3":0.3,"sensor_temp3":37.5,"lat":0,"long":0}

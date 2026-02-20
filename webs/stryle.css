@@ -1,0 +1,163 @@
+/* /opt/lampp/htdocs/pages/firepump/css/style.css */
+
+:root { 
+    --bg: #0f172a; 
+    --card: #1e293b; 
+    --accent: #3b82f6; 
+    --text: #f1f5f9; 
+    --debug: #10b981; 
+    --sidebar-width: 60px;
+    --sidebar-expanded: 240px;
+}
+
+/* 1. LAYOUT ADJUSTMENT */
+body { 
+    background: var(--bg); 
+    color: var(--text); 
+    font-family: sans-serif; 
+    margin: 0; 
+    padding: 0; /* Reset padding to 0 for the sidebar layout */
+    display: flex; /* Critical for sidebar/content split */
+    min-height: 100vh;
+}
+
+/* 2. AUTO-HIDE SIDEBAR STYLES */
+.sidebar {
+    width: var(--sidebar-width);
+    background: #1e293b;
+    border-right: 1px solid #334155;
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1000;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar:hover {
+    width: var(--sidebar-expanded);
+    box-shadow: 10px 0 20px rgba(0,0,0,0.5);
+}
+
+.sidebar-nav {
+    flex: 1;
+    padding-top: 20px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    padding: 15px 20px;
+    color: #94a3b8;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.2s;
+}
+
+.nav-item:hover {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent);
+}
+
+.nav-item .icon {
+    min-width: 25px;
+    margin-right: 25px;
+    font-size: 1.2rem;
+    text-align: center;
+}
+
+/* 3. MAIN CONTENT (Where your dashboard lives) */
+.main-content {
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    padding: 20px; /* Restores the 20px padding from your original body */
+    transition: margin-left 0.3s ease;
+    min-width: 0;
+}
+
+/* 4. YOUR ORIGINAL WORKING UI STYLES */
+.topbar { 
+    height: 70px; display: flex; justify-content: space-between; align-items: center; 
+    padding: 0 20px; border-bottom: 1px solid #334155; background: rgba(30, 41, 59, 0.95); 
+    backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 100; 
+    margin: -20px -20px 20px -20px; /* Offsets main-content padding */
+}
+
+.topbar-right { display: flex; align-items: center; gap: 20px; }
+
+.clock-section {
+    text-align: right; border-right: 1px solid #334155; padding-right: 15px; line-height: 1.1; min-width: 110px;
+}
+
+.status-indicator {
+    display: flex; align-items: center; gap: 8px; background: rgba(30, 41, 59, 0.5);
+    padding: 6px 14px; border-radius: 20px; border: 1px solid #334155;
+}
+
+.dashboard-grid { display: grid; gap: 15px; margin-bottom: 20px; grid-template-columns: 1fr; }
+@media (min-width: 992px) { .dashboard-grid { grid-template-columns: repeat(5, 1fr); } }
+
+.card { 
+    background: var(--card); border-radius: 15px; padding: 15px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); 
+    display: flex; flex-direction: column; align-items: center; position: relative; overflow: hidden;
+}
+
+.card h2 { font-size: 0.85rem; margin-top: 10px; color: #94a3b8; white-space: nowrap; }
+
+.card-header {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    position: absolute; top: 10px; padding: 0 12px; box-sizing: border-box;
+}
+
+.status-online { color: #22c55e; font-size: 0.8rem; }
+.status-offline { color: #ef4444; font-size: 0.8rem; text-shadow: 0 0 5px #ef4444; }
+
+.safe-status { color: #22c55e; opacity: 0.8; font-size: 0.8rem; filter: drop-shadow(0 0 2px rgba(34, 197, 94, 0.4)); }
+.alert-badge { font-size: 1.1rem; }
+.high-temp-alert { color: #ef4444 !important; text-shadow: 0 0 10px #ef4444; animation: blink 1s infinite; }
+
+@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+.sensor-footer { display: flex; justify-content: space-around; width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px solid #334155; }
+.stat { display: flex; flex-direction: column; align-items: center; font-family: monospace; }
+.stat small { font-size: 0.6rem; color: #64748b; }
+.stat span { font-weight: bold; font-size: 0.9rem; }
+
+.chart-container { width: 100%; background: var(--card); border-radius: 15px; padding: 15px; height: 45vh; min-height: 300px; }
+
+.dot { height: 10px; width: 10px; background-color: #ef4444; border-radius: 50%; transition: 0.3s; }
+.dot.connected { background-color: #22c55e; box-shadow: 0 0 10px #22c55e; }
+
+#debugOverlay { 
+    display: none; 
+    position: fixed; 
+    top: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 100%; 
+    background: rgba(0,0,0,0.85); 
+    z-index: 2000; /* Ensure it is above the sidebar */
+    
+    /* ADD THESE 3 LINES TO CENTER */
+    display: none; /* JavaScript will change this to 'flex' */
+    justify-content: center; 
+    align-items: center; 
+}
+
+.debug-window { 
+    background: #000; 
+    border: 1px solid var(--debug); 
+    border-radius: 12px; 
+    width: 80%;       /* Set a width */
+    max-width: 900px; /* Maximum width for large screens */
+    height: 80vh;     /* Set a height (80% of viewport) */
+    display: flex; 
+    flex-direction: column; 
+    padding: 20px; 
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.2); /* Soft glow matching your green */
+}
+#jsonFeed { flex: 1; overflow-y: auto; color: var(--debug); font-family: monospace; font-size: 12px; }
+.btn-debug { background: transparent; color: var(--debug); border: 1px solid var(--debug); padding: 5px 12px; border-radius: 4px; cursor: pointer; }
