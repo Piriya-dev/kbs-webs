@@ -438,7 +438,7 @@ client.on('message', (topic, payload) => {
 setInterval(() => {
     const now = Date.now();
     for (let i = 1; i <= 5; i++) {
-        if (now - lastSeen[i] > 15000) { 
+        if (now - lastSeen[i] > 15000) { ฟ
             const statusEl = document.getElementById(`status${i}`);
             if (statusEl) statusEl.className = "status-offline";
             liveState[i] = null;

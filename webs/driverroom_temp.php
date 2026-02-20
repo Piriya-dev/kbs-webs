@@ -48,7 +48,6 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 
         .safe-status { color: #10b981; }
 
-        /* Style เพิ่มเติมสำหรับ Threshold Display */
         .threshold-pill {
             background: rgba(30, 41, 59, 0.7);
             border: 1px solid #334155;
@@ -63,7 +62,7 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 </head>
 <body class="app-container">
 
-<aside class="sidebar">
+<!-- <aside class="sidebar">
     <div class="sidebar-nav">
         <a href="/motor_drive_room_dashboard" class="nav-item active">
             <span class="icon">📊</span><span class="text">Dashboard</span>
@@ -75,6 +74,51 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
             <span class="icon">📝</span><span class="text">Debug Logs</span>
         </a>
     </div>
+    <div style="padding-bottom: 20px;">
+        <a href="/motor_drive_room_logout" class="nav-item" style="color: #ef4444;">
+            <span class="icon">⏻</span><span class="text">Logout</span>
+        </a>
+    </div>
+</aside> -->
+<aside class="sidebar">
+    <div class="sidebar-nav">
+        <a href="/motor_drive_room_dashboard" class="nav-item active">
+            <span class="icon">📊</span><span class="text">Dashboard</span>
+        </a>
+        
+        <?php if ($_SESSION['role'] === 'admin'): ?>
+        <a href="/motor_drive_room_settings" class="nav-item">
+            <span class="icon">⚙️</span><span class="text">Settings</span>
+        </a>
+        <a href="/motor_drive_room_logs" class="nav-item">
+            <span class="icon">📝</span><span class="text">Access Logs</span>
+        </a>
+        <?php endif; ?>
+
+        <a href="javascript:void(0);" class="nav-item" onclick="toggleDebug(true)">
+            <span class="icon">📝</span><span class="text">Debug Logs</span>
+        </a>
+    </div>
+
+    <div style="padding: 20px; border-top: 1px solid #334155; margin-top: auto;">
+        <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">
+            Current User
+        </div>
+        <div style="font-weight: 700; color: #fff; margin-top: 5px;">
+            <?php echo htmlspecialchars(strtoupper($_SESSION['username'])); ?>
+        </div>
+        
+        <?php if ($_SESSION['role'] === 'admin'): ?>
+            <span style="display: inline-block; padding: 2px 8px; background: #3b82f6; color: #fff; border-radius: 4px; font-size: 0.65rem; font-weight: bold; margin-top: 5px;">
+                Admin
+            </span>
+        <?php else: ?>
+            <span style="display: inline-block; padding: 2px 8px; background: #64748b; color: #fff; border-radius: 4px; font-size: 0.65rem; font-weight: bold; margin-top: 5px;">
+                User
+            </span>
+        <?php endif; ?>
+    </div>
+
     <div style="padding-bottom: 20px;">
         <a href="/motor_drive_room_logout" class="nav-item" style="color: #ef4444;">
             <span class="icon">⏻</span><span class="text">Logout</span>

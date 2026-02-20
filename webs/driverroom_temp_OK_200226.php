@@ -1,14 +1,41 @@
 <?php
 /**
- * station_status_dashboard.php - Motor Drive Monitoring with Dynamic Thresholds Display
+ * station_status_dashboard.php - Motor Drive Monitoring with Database-backed Thresholds
  */
 $config = require 'config.php';
 session_set_cookie_params(31536000);
 ini_set('session.gc_maxlifetime', 31536000);
 session_start();
+
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     header("Location: /motor_drive_room_login");
     exit;
+}
+
+// --- 1. ดึงค่าจาก DATABASE มาแสดงเป็นค่าเริ่มต้น ---
+$db_temp_limit = 24.00;
+$db_humid_limit = 60.00;
+
+try {
+    $db_host = '127.0.0.1';
+    $db_name = 'kbs_eng_db'; // *** เปลี่ยนเป็นชื่อ DB ของคุณ ***
+    $db_user = 'kbs-ccsonline';               // *** เปลี่ยนเป็น User ของคุณ ***
+    $db_pass = '@Kbs2024!#';                   // *** เปลี่ยนเป็น Password ของคุณ ***
+    
+    $conn = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
+    // ดึงค่าล่าสุดโดยเรียงจาก id หรือถ้าไม่มี id ให้เรียงจาก timestamp (ถ้ามี) 
+    // ในที่นี้ผมใช้ LIMIT 1 เพื่อเอาแถวล่าสุดที่บันทึกไว้
+    $stmt = $conn->query("SELECT temp_limit, humid_limit FROM threshold_logs ORDER BY id DESC LIMIT 1");
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($row) {
+        $db_temp_limit = (float)$row['temp_limit'];
+        $db_humid_limit = (float)$row['humid_limit'];
+    }
+} catch (PDOException $e) {
+    // กรณี Error จะใช้ค่า Default 30/70
 }
 ?>
 
@@ -24,41 +51,13 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     <script src="https://cdn.rawgit.com/Mikhus/canvas-gauges/master/gauge.min.js"></script>
     <link rel="stylesheet" href="/pages/firepump/css/style.css">
     <style>
+        /* ... Style เดิมของคุณคงไว้ทั้งหมด ... */
         .status-online { color: #22c55e; text-shadow: 0 0 8px rgba(34, 197, 94, 0.8); transition: all 0.3s ease; }
         .status-offline { color: #64748b; transition: all 0.3s ease; }
-        
-        .high-temp-alert { 
-            animation: pulse-red 1.5s infinite; 
-            background: #ef4444 !important; 
-            color: white !important; 
-            border-radius: 50%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 18px;
-            height: 18px;
-            font-size: 12px;
-        }
-
-        @keyframes pulse-red {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
-
+        .high-temp-alert { animation: pulse-red 1.5s infinite; background: #ef4444 !important; color: white !important; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; font-size: 12px; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
         .safe-status { color: #10b981; }
-
-        /* Style เพิ่มเติมสำหรับ Threshold Display */
-        .threshold-pill {
-            background: rgba(30, 41, 59, 0.7);
-            border: 1px solid #334155;
-            padding: 4px 10px;
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-width: 70px;
-        }
+        .threshold-pill { background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; padding: 4px 10px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; min-width: 70px; }
     </style>
 </head>
 <body class="app-container">
@@ -68,17 +67,29 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
         <a href="/motor_drive_room_dashboard" class="nav-item active">
             <span class="icon">📊</span><span class="text">Dashboard</span>
         </a>
+        <?php if ($_SESSION['role'] === 'admin'): ?>
         <a href="/motor_drive_room_settings" class="nav-item">
             <span class="icon">⚙️</span><span class="text">Settings</span>
         </a>
+        <a href="/motor_drive_room_logs" class="nav-item">
+            <span class="icon">📝</span><span class="text">Access Logs</span>
+        </a>
+        <?php endif; ?>
         <a href="javascript:void(0);" class="nav-item" onclick="toggleDebug(true)">
             <span class="icon">📝</span><span class="text">Debug Logs</span>
         </a>
     </div>
+
+    <div style="padding: 20px; border-top: 1px solid #334155; margin-top: auto;">
+        <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">Current User</div>
+        <div style="font-weight: 700; color: #fff; margin-top: 5px;"><?php echo htmlspecialchars(strtoupper($_SESSION['username'])); ?></div>
+        <span style="display: inline-block; padding: 2px 8px; background: #3b82f6; color: #fff; border-radius: 4px; font-size: 0.65rem; font-weight: bold; margin-top: 5px;">
+            <?php echo strtoupper($_SESSION['role']); ?>
+        </span>
+    </div>
+
     <div style="padding-bottom: 20px;">
-        <a href="/motor_drive_room_logout" class="nav-item" style="color: #ef4444;">
-            <span class="icon">⏻</span><span class="text">Logout</span>
-        </a>
+        <a href="/motor_drive_room_logout" class="nav-item" style="color: #ef4444;"><span class="icon">⏻</span><span class="text">Logout</span></a>
     </div>
 </aside>
 
@@ -94,21 +105,25 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 
       <div class="topbar-right">
         <div style="display: flex; gap: 8px; margin-right: 10px; border-right: 1px solid #334155; padding-right: 15px;">
-            <div class="threshold-pill">
-                <span style="font-size: 0.55rem; color: #94a3b8; text-transform: uppercase;">Set Temp</span>
-                <span id="dispTempLimit" style="color: #f59e0b; font-weight: 700; font-size: 0.9rem;">30.00</span>
-            </div>
-            <div class="threshold-pill">
-                <span style="font-size: 0.55rem; color: #94a3b8; text-transform: uppercase;">Set Humid</span>
-                <span id="dispHumidLimit" style="color: #a855f7; font-weight: 700; font-size: 0.9rem;">70.00</span>
-            </div>
+        <div class="threshold-pill">
+    <span style="font-size: 0.55rem; color: #94a3b8; text-transform: uppercase;">Set Temp</span>
+    <span id="dispTempLimit" style="color: #f59e0b; font-weight: 700; font-size: 0.9rem;">
+        <?php echo number_format($db_temp_limit, 2); ?>
+    </span>
+</div>
+<div class="threshold-pill">
+    <span style="font-size: 0.55rem; color: #94a3b8; text-transform: uppercase;">Set Humid</span>
+    <span id="dispHumidLimit" style="color: #a855f7; font-weight: 700; font-size: 0.9rem;">
+        <?php echo number_format($db_humid_limit, 2); ?>
+    </span>
+</div>
         </div>
 
         <div class="clock-section">
             <div id="liveDate" style="font-size: 0.65rem; color: #94a3b8; text-transform: uppercase;">-- --- ----</div>
             <div id="liveClock" style="font-size: 1.1rem; color: #fff; font-weight: 700; font-family: monospace;">00:00:00</div>
         </div>
-
+        
         <div id="avgHumidCard" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 15px; border-radius: 10px; display: flex; align-items: center; gap: 12px; height: 38px;">
             <div style="display: flex; flex-direction: column; font-size: 0.65rem; color: #94a3b8; border-right: 1px solid #334155; padding-right: 10px; line-height: 1.2;">
                 <span>MAX: <span id="hMaxVal" style="color: #ef4444; font-weight:bold;">--</span></span>
@@ -121,7 +136,6 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
                 <span style="color: #10b981; font-size: 0.8rem;">%</span>
             </div>
         </div>
-
         <div id="avgTempCard" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(59, 130, 246, 0.3); padding: 6px 15px; border-radius: 10px; display: flex; align-items: center; gap: 12px; height: 38px;">
             <div style="display: flex; flex-direction: column; font-size: 0.65rem; color: #94a3b8; border-right: 1px solid #334155; padding-right: 10px; line-height: 1.2;">
                 <span>MAX: <span id="maxVal" style="color: #ef4444; font-weight:bold;">--</span></span>
@@ -134,7 +148,6 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
                 <span style="color: #3b82f6; font-size: 0.8rem;">°C</span>
             </div>
         </div>
-
         <div class="status-indicator">
             <span id="mqttDot" class="dot"></span>
             <span id="mqttStatus" style="color:#94a3b8; font-size:0.75rem; font-weight:bold; text-transform:uppercase;">Offline</span>
@@ -144,6 +157,7 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 
     <div class="dashboard-grid">
         <script>
+            // ... Sensor Grid ยังคงเดิม ...
             const sensorNames = ["S1: Drive 1 (ราง A)", "S2: Drive 2 (ราง A)", "S3: Drive 3 (ราง A)", "S4: Area 1 (ราง A)", "S5: Area 2 (ราง A)"];
             sensorNames.forEach((name, i) => {
                 document.write(`
@@ -155,13 +169,11 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
                         </div>
                         <h2>${name}</h2>
                         <canvas id="gauge${i+1}"></canvas>
-                        
                         <div class="sensor-footer">
                             <div class="stat"><small>T-MIN</small><span id="min${i+1}" style="color:#10b981">--</span></div>
                             <div class="stat"><small>T-AVG <span id="trend${i+1}">━</span></small><span id="avg${i+1}" style="color:#3b82f6">--</span></div>
                             <div class="stat"><small>T-MAX</small><span id="max${i+1}" style="color:#ef4444">--</span></div>
                         </div>
-
                         <div class="sensor-footer" style="margin-top: 5px; border-top: 1px dashed #334155; padding-top: 5px;">
                             <div class="stat"><small>H-MIN</small><span id="hmin${i+1}" style="color:#10b981">--</span></div>
                             <div class="stat"><small>H-AVG</small><span id="havg${i+1}" style="color:#3b82f6">--</span></div>
@@ -194,22 +206,23 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
 
 <script>
 /* === CONFIG & STATE === */
-let currentThresholds = { temp: 30.0, humid: 70.0 };
+// --- สำคัญ: รับค่าจาก PHP มาใส่ในตัวแปร JavaScript ---
+let currentThresholds = { 
+    temp: <?php echo $db_temp_limit; ?>, 
+    humid: <?php echo $db_humid_limit; ?> 
+};
 
 const MQTT_CONFIG = {
     url: '<?php echo $config["mqtt_ws_url"]; ?>',
     user: '<?php echo $config["mqtt_user"]; ?>',
     pass: '<?php echo $config["mqtt_pass"]; ?>',
     topics: [
-        'kbs/driveroom1/temp1', 
-        'kbs/driveroom1/temp2', 
-        'kbs/driveroom1/temp3', 
-        'kbs/driveroom1/temp4',
-        'kbs/driveroom1/temp5',
-        'kbs/motordriveroom1/config'
+        'kbs/driveroom1/temp1', 'kbs/driveroom1/temp2', 'kbs/driveroom1/temp3', 
+        'kbs/driveroom1/temp4', 'kbs/driveroom1/temp5', 'kbs/motordriveroom1/config'
     ]
 };
 
+// ... State อื่นๆ (liveState, logs, gaugeOptions) คงเดิม ...
 const liveState = { 1: null, 2: null, 3: null, 4: null, 5: null };
 const liveHumid = { 1: null, 2: null, 3: null, 4: null, 5: null }; 
 const sensorLogs = { 1: [], 2: [], 3: [], 4: [], 5: [] };
@@ -217,15 +230,10 @@ const humidLogs = { 1: [], 2: [], 3: [], 4: [], 5: [] };
 const lastSeen = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }; 
 let previousAverage = null;
 let previousHumidAverage = null;
-
-let globalMinT = Infinity;
-let globalMaxT = -Infinity;
-let globalMinH = Infinity;
-let globalMaxH = -Infinity;
-
+let globalMinT = Infinity; let globalMaxT = -Infinity;
+let globalMinH = Infinity; let globalMaxH = -Infinity;
 const fullHistory = { labels: [], s1: [], s2: [], s3: [], s4: [], s5: [], lastMinute: null };
 
-/* === GAUGE & CHART INIT === */
 function getGaugeHighlights(tempLimit) {
     return [
         { "from": 0, "to": tempLimit - 5, "color": "rgba(13, 224, 97, 0.75)" },
@@ -239,7 +247,7 @@ const gaugeOptions = {
     majorTicks: ["0","20","40","60","80","100"], minorTicks: 2,
     colorPlate: "#1e293b", colorNumbers: "#eee", colorUnits: "#ccc",
     valueInt: 1, valueDec: 2,
-    highlights: getGaugeHighlights(currentThresholds.temp),
+    highlights: getGaugeHighlights(currentThresholds.temp), // ใช้ค่าจริงจาก DB
     animationDuration: 1000, animationRule: "linear"
 };
 
@@ -251,34 +259,23 @@ const gauges = [
     new RadialGauge({ ...gaugeOptions, renderTo: 'gauge5', title: 'S5' }).draw()
 ];
 
+// ... ฟังก์ชัน Charts, Average, Clock คงเดิม ...
 const trendChart = new Chart(document.getElementById('trendChart'), {
     type: 'line',
-    data: {
-        labels: [],
-        datasets: [
-            { label: 'S1', borderColor: '#427CDA', data: [], tension: 0.3, pointRadius: 0 },
-            { label: 'S2', borderColor: '#10b981', data: [], tension: 0.3, pointRadius: 0 },
-            { label: 'S3', borderColor: '#f59e0b', data: [], tension: 0.3, pointRadius: 0 },
-            { label: 'S4', borderColor: '#EDEA0A', data: [], tension: 0.3, pointRadius: 0 },
-            { label: 'S5', borderColor: '#444AEF', data: [], tension: 0.3, pointRadius: 0 }
-        ]
-    },
-    options: { 
-        responsive: true, maintainAspectRatio: false,
-        scales: { 
-            x: { grid:{color:'#334155'}, ticks: { color:'#94a3b8', maxTicksLimit: 8 } },
-            y: { grid:{color:'#334155'}, ticks: { color:'#94a3b8' }, min: 0, max: 100 }
-        },
-        plugins: { legend: { labels: { color: '#fff', boxWidth: 10 } } }
-    }
+    data: { labels: [], datasets: [
+        { label: 'S1', borderColor: '#427CDA', data: [], tension: 0.3, pointRadius: 0 },
+        { label: 'S2', borderColor: '#10b981', data: [], tension: 0.3, pointRadius: 0 },
+        { label: 'S3', borderColor: '#f59e0b', data: [], tension: 0.3, pointRadius: 0 },
+        { label: 'S4', borderColor: '#EDEA0A', data: [], tension: 0.3, pointRadius: 0 },
+        { label: 'S5', borderColor: '#444AEF', data: [], tension: 0.3, pointRadius: 0 }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, scales: { x: { grid:{color:'#334155'}, ticks: { color:'#94a3b8', maxTicksLimit: 8 } }, y: { grid:{color:'#334155'}, ticks: { color:'#94a3b8' }, min: 0, max: 100 } }, plugins: { legend: { labels: { color: '#fff', boxWidth: 10 } } } }
 });
 
-/* === CORE LOGIC === */
 function updateRealtimeAverage() {
     let allStoredTemps = Object.values(sensorLogs).flat();
     const avgEl = document.getElementById('avgTempValue');
     const trendEl = document.getElementById('avgTrendIcon');
-
     if (allStoredTemps.length > 0) {
         document.getElementById('minVal').innerText = globalMinT.toFixed(2);
         document.getElementById('maxVal').innerText = globalMaxT.toFixed(2);
@@ -292,7 +289,6 @@ function updateRealtimeAverage() {
         }
         previousAverage = currentAvgT;
     }
-
     let allStoredHumid = Object.values(humidLogs).flat();
     if (allStoredHumid.length > 0) {
         document.getElementById('hMinVal').innerText = globalMinH.toFixed(2);
@@ -349,8 +345,7 @@ const client = mqtt.connect(MQTT_CONFIG.url, { username: MQTT_CONFIG.user, passw
 client.on('connect', () => {
     document.getElementById('mqttDot').classList.add('connected');
     const statusText = document.getElementById('mqttStatus');
-    statusText.innerText = "Online";
-    statusText.style.color = "#22c55e";
+    statusText.innerText = "Online"; statusText.style.color = "#22c55e";
     MQTT_CONFIG.topics.forEach(t => client.subscribe(t));
 });
 
@@ -358,22 +353,16 @@ client.on('message', (topic, payload) => {
     try {
         const js = JSON.parse(payload.toString());
 
-        // Handle Dynamic Threshold Updates
+        // ยังรักษาฟีเจอร์ Dynamic MQTT Update ไว้ (เพื่อให้ Dashboard อัปเดตทันทีเมื่อแอดมินเปลี่ยนค่าที่หน้า Settings)
         if (topic === 'kbs/motordriveroom1/config') {
             currentThresholds.temp = parseFloat(js.temp_limit);
             currentThresholds.humid = parseFloat(js.humid_limit);
-            
-            // อัปเดตตัวเลขแสดงผลที่ Topbar
             document.getElementById('dispTempLimit').innerText = currentThresholds.temp.toFixed(2);
             document.getElementById('dispHumidLimit').innerText = currentThresholds.humid.toFixed(2);
-            
-            // อัปเดต Gauge Highlights
             gauges.forEach(g => g.update({ highlights: getGaugeHighlights(currentThresholds.temp) }));
-            console.log("Thresholds synchronized:", currentThresholds);
             return;
         }
 
-        // Handle Sensor Data
         const val = parseFloat(js.temp);
         const humid = parseFloat(js.humid);
         const sID = parseInt(js.sensor_id); 
@@ -382,19 +371,15 @@ client.on('message', (topic, payload) => {
         if (sID >= 1 && sID <= 5) {
             lastSeen[sID] = Date.now();
             document.getElementById(`status${sID}`).className = "status-online";
-            
             const hLive = document.getElementById(`hmdLive${sID}`);
             if(hLive) hLive.innerText = humid.toFixed(2);
 
             gauges[sID-1].value = val;
-            
             const alertEl = document.getElementById(`alert${sID}`);
             if (val >= currentThresholds.temp) { 
-                alertEl.innerText = "⚠"; 
-                alertEl.className = "alert-badge high-temp-alert"; 
+                alertEl.innerText = "⚠"; alertEl.className = "alert-badge high-temp-alert"; 
             } else { 
-                alertEl.innerText = "●"; 
-                alertEl.className = "alert-badge safe-status"; 
+                alertEl.innerText = "●"; alertEl.className = "alert-badge safe-status"; 
             }
 
             if (val < globalMinT) globalMinT = val;
@@ -412,7 +397,6 @@ client.on('message', (topic, payload) => {
                 document.getElementById(`max${sID}`).innerText = Math.max(...tLog).toFixed(2);
                 document.getElementById(`avg${sID}`).innerText = (tLog.reduce((a,b)=>a+b,0) / tLog.length).toFixed(2);
             }
-
             const hLog = humidLogs[sID];
             if (hLog.length > 0) {
                 document.getElementById(`hmin${sID}`).innerText = Math.min(...hLog).toFixed(2);
@@ -420,9 +404,7 @@ client.on('message', (topic, payload) => {
                 document.getElementById(`havg${sID}`).innerText = (hLog.reduce((a,b)=>a+b,0) / hLog.length).toFixed(2);
             }
 
-            liveState[sID] = val;    
-            liveHumid[sID] = humid;  
-            
+            liveState[sID] = val; liveHumid[sID] = humid;  
             updateRealtimeAverage();
             updateChart(sID - 1, val, now);
 
@@ -441,25 +423,18 @@ setInterval(() => {
         if (now - lastSeen[i] > 15000) { 
             const statusEl = document.getElementById(`status${i}`);
             if (statusEl) statusEl.className = "status-offline";
-            liveState[i] = null;
-            liveHumid[i] = null;
         }
     }
     updateRealtimeAverage();
 }, 5000);
 
-function toggleDebug(show) { 
-    const overlay = document.getElementById('debugOverlay');
-    overlay.style.display = show ? 'flex' : 'none'; 
-}
-
+function toggleDebug(show) { document.getElementById('debugOverlay').style.display = show ? 'flex' : 'none'; }
 function resizeGauges() {
     const firstCard = document.querySelector('.card');
     if (!firstCard) return;
     const newSize = Math.max(150, Math.min(firstCard.offsetWidth - 40, 220));
     gauges.forEach(g => g.update({ width: newSize, height: newSize }));
 }
-
 setInterval(updateClock, 1000);
 window.addEventListener('resize', resizeGauges);
 window.addEventListener('load', () => { updateClock(); resizeGauges(); });
