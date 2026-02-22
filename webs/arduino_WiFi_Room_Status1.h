@@ -7,7 +7,7 @@ const char* password = "KBSit@2468";
 // 1. URL สำหรับอ่านค่าสวิตช์ (ขาลง)
 const char* serverName = "http://203.154.4.209/pages/firepump/check_status_for_esp32.php";
 // 2. URL สำหรับส่งค่าเซนเซอร์กลับ (ขาขึ้น)
-const char* uploadURL = "http://203.154.4.209/pages/firepump/update_status.php";
+const char* uploadURL = "http://203.154.4.209/pages/firepump/update_sensor.php";
 
 #define LED2 2
 bool isBlinking = false;
