@@ -1,34 +1,32 @@
 RewriteEngine On
 
-# --- 1. BLOCK DIRECT ACCESS TO REAL PHP FILES ---
-# หากเข้าผ่านไฟล์ .php ตรงๆ ให้ Redirect ไปที่ URL สวยๆ
+# --- BLOCK DIRECT ACCESS TO REAL PHP FILES ---
+# Redirects full paths to clean names to keep the URL bar tidy
 RewriteCond %{THE_REQUEST} /pages/firepump/motor_drive_status_login\.php [NC]
 RewriteRule ^ /motor_drive_room_login [R=301,L]
 
 RewriteCond %{THE_REQUEST} /pages/firepump/motor_drive_status\.php [NC]
 RewriteRule ^ /motor_drive_room_dashboard [R=301,L]
 
-# แก้ไขจุดนี้: ใช้ชื่อไฟล์ setting.php ให้ตรงกับความจริง
-RewriteCond %{THE_REQUEST} /pages/firepump/setting\.php [NC]
+RewriteCond %{THE_REQUEST} /pages/firepump/settings\.php [NC]
 RewriteRule ^ /motor_drive_room_settings [R=301,L]
 
-# Redirect สำหรับหน้า Report
+# NEW: Redirect direct access for Report
 RewriteCond %{THE_REQUEST} /pages/firepump/station_report\.php [NC]
 RewriteRule ^ /motor_drive_room_report [R=301,L]
 
 
-# --- 2. CLEAN URL MAPPING ---
-# จับคู่ Pretty URL เข้ากับไฟล์จริงใน Server
+# --- CLEAN URL MAPPING ---
+# Maps the "Pretty URL" to the actual physical PHP file
 RewriteRule ^motor_drive_room_login$ pages/firepump/motor_drive_status_login.php [L]
 RewriteRule ^motor_drive_room_dashboard$ pages/firepump/motor_drive_status.php [L]
-RewriteRule ^motor_drive_room_settings$ pages/firepump/setting.php [L]
+RewriteRule ^motor_drive_room_settings$ pages/firepump/settings.php [L]
 RewriteRule ^motor_drive_room_logout$ pages/firepump/motor_drive_status_logout.php [L]
 
-# เส้นทางสำหรับหน้า Report และ API ดึงข้อมูล
+# NEW: Mappings for Report and Data Fetching
 RewriteRule ^motor_drive_room_report$ pages/firepump/station_report.php [L]
 RewriteRule ^report_fetch_data$ pages/firepump/report_fetch_data.php [L]
 
 
-# --- 3. ROOT REDIRECT ---
-# ลบตัว "a" ที่เกินมา และส่งไปหน้า Login เป็นค่าเริ่มต้น
+# --- ROOT REDIRECT ---
 RewriteRule ^$ motor_drive_room_login [R,L]
