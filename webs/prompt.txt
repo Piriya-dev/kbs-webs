@@ -1,0 +1,11 @@
+ห้ามลบ Sidebar, Trend Chart, หรือสถิติใดๆ ออกจากโค้ด PHP/JS ของฉันเด็ดขาด
+
+Dashboard/Report Menu: กลับมาใช้งานได้ปกติแล้ว
+
+Line Notify 1-Min Delay: ป้องกันการแจ้งเตือนรัว (รอ 1 นาทีถึงจะส่ง)
+
+Manual Light Switch: ปุ่มเปิด-ปิดไฟแยกจากระบบ Auto (ไม่เด้งกลับทันที)
+
+Real-time Logic: เทียบค่าจริงกับเกณฑ์ที่คุณตั้งในหน้าจอทันที
+
+All Settings Preserved: ค่าจากฐานข้อมูลยังถูกดึงมาโชว์ในช่อง Input อย่างถูกต้อง

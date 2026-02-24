@@ -71,9 +71,9 @@ try {
         <a href="/motor_drive_room_settings" class="nav-item">
             <span class="icon">⚙️</span><span class="text">Settings</span>
         </a>
-        <a href="/motor_drive_room_logs" class="nav-item">
+        <!-- <a href="/motor_drive_room_logs" class="nav-item">
             <span class="icon">📝</span><span class="text">Access Logs</span>
-        </a>
+        </a> -->
         <?php endif; ?>
         <a href="javascript:void(0);" class="nav-item" onclick="toggleDebug(true)">
             <span class="icon">📝</span><span class="text">Debug Logs</span>
@@ -92,7 +92,6 @@ try {
         <a href="/motor_drive_room_logout" class="nav-item" style="color: #ef4444;"><span class="icon">⏻</span><span class="text">Logout</span></a>
     </div>
 </aside>
-
 <main class="main-content">
     <header class="topbar">
       <div style="display:flex; align-items:center; gap:12px;">
