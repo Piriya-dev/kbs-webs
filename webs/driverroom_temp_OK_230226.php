@@ -90,7 +90,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
             <a href="/motor_drive_room_dashboard" class="nav-item">📊 Dashboard</a>
             <a href="/motor_drive_room_report" class="nav-item">📈 Report</a>
             <a href="/motor_drive_room_status" class="nav-item">🌐 Status</a>
+            <a href="/motor_drive_debug_system" class="nav-item">🌐 Debug System</a>
             <a href="#" class="nav-item active">⚙️ Settings</a>
+
         </div>
     </aside>
 

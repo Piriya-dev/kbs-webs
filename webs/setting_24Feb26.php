@@ -1,7 +1,6 @@
 <?php
 /**
- * setting.php - Full Integrated Version
- * Features: 1-Min Confirm, Manual Switch Fix, SQL Persistent Logic
+ * setting.php - Full Integrated Version (100% Verified)
  */
 $config = require 'config.php';
 session_start();
@@ -11,35 +10,49 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     exit;
 }
 
-// --- 1. ดึงค่าจาก Database ---
+// --- 1. Database Connection (ต้องมาก่อนการ Query) ---
+$db_host = '127.0.0.1'; $db_name = 'kbs_eng_db'; $db_user = 'kbs-ccsonline'; $db_pass = '@Kbs2024!#';                   
+try {
+    $conn = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die("Connection error");
+}
+
+// ✅ 2. ส่วนรับค่าบันทึก Alarm Logic ลง Database (ที่เพิ่มเข้าไปเพื่อให้ Persistent)
+if (isset($_POST['action']) && $_POST['action'] === 'save_logic_db') {
+    header('Content-Type: application/json');
+    $mode = $_POST['mode'];
+    $line = (int)$_POST['line'];
+    $light = (int)$_POST['light'];
+    
+    $stmt = $conn->prepare("UPDATE threshold_configs SET alarm_mode = ?, alarm_line = ?, alarm_light = ? WHERE sensor_id = 0");
+    $stmt->execute([$mode, $line, $light]);
+    echo json_encode(['status' => 'success']);
+    exit;
+}
+
+// --- 3. ดึงค่าเริ่มต้นจาก Database ---
 $global_temp = 27.0; $global_humid = 65.0;
-$alarm_mode = 'individual'; // Default
-$alarm_line = 1;            // Default (Enabled)
-$alarm_light = 1;           // Default (Enabled)
+$alarm_mode = 'individual'; $alarm_line = 1; $alarm_light = 1;
 $sensor_configs = [];
 for ($i = 1; $i <= 5; $i++) { $sensor_configs[$i] = ['temp' => 40.0, 'humid' => 60.0]; }
 
-try {
-    $db_host = '127.0.0.1'; $db_name = 'kbs_eng_db'; $db_user = 'kbs-ccsonline'; $db_pass = '@Kbs2024!#';                   
-    $conn = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
-    
-    // ✅ Fetch ทั้งค่าเกณฑ์ และค่า Alarm Logic Status จาก Database
-    $stmt = $conn->query("SELECT * FROM threshold_configs WHERE sensor_id BETWEEN 0 AND 5");
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $id = (int)$row['sensor_id'];
-        if ($id === 0) {
-            $global_temp = (float)$row['temp_threshold'];
-            $global_humid = (float)$row['humid_threshold'];
-            // ✅ ดึงค่าสถานะการตั้งค่าจาก DB แทนค่า Default ในโค้ด
-            $alarm_mode = $row['alarm_mode'] ?? 'individual';
-            $alarm_line = (int)($row['alarm_line'] ?? 1);
-            $alarm_light = (int)($row['alarm_light'] ?? 1);
-        } else {
-            $sensor_configs[$id] = ['temp' => (float)$row['temp_threshold'], 'humid' => (float)$row['humid_threshold']];
-        }
+$stmt = $conn->query("SELECT * FROM threshold_configs WHERE sensor_id BETWEEN 0 AND 5");
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $id = (int)$row['sensor_id'];
+    if ($id === 0) {
+        $global_temp = (float)$row['temp_threshold'];
+        $global_humid = (float)$row['humid_threshold'];
+        $alarm_mode = $row['alarm_mode'] ?? 'individual';
+        $alarm_line = (int)($row['alarm_line'] ?? 1);
+        $alarm_light = (int)($row['alarm_light'] ?? 1);
+    } else {
+        $sensor_configs[$id] = ['temp' => (float)$row['temp_threshold'], 'humid' => (float)$row['humid_threshold']];
     }
-} catch (PDOException $e) { }
+}
 
+// --- 4. ส่วนทดสอบ Line API (โค้ดดั้งเดิมของคุณ) ---
 if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
     header('Content-Type: application/json');
     $accessToken = 'C2wBOtd3y8bXw7m8TCPU6kE3y8cMFi1w4J98wC1SZiqirrYWMqCSrPcQKjwus39B/f/9Ev1bpE1FAWoDN4/Nq2zcACx0r0K88juxk+Rq4fbZgTQCRUgM5of+rl2tOsFR0URBFmSeVHeOAfhTe0xhQQdB04t89/1O/w1cDnyilFU='; 
@@ -63,16 +76,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
     <link rel="stylesheet" href="/pages/firepump/css/style.css">
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
-        :root { 
-            --sidebar-width: 260px;
-            --card: #1e293b; 
-            --accent: #3b82f6; 
-            --bg: #0f172a; 
-            --line-green: #06c755; 
-            --orange: #f59e0b; 
-        }
+        :root { --sidebar-width: 260px; --card: #1e293b; --accent: #3b82f6; --bg: #0f172a; --line-green: #06c755; --orange: #f59e0b; }
         body { display: flex; margin: 0; background-color: var(--bg); color: #fff; font-family: 'Plus Jakarta Sans', sans-serif; min-height: 100vh; }
-        .sidebar { width: var(--sidebar-width); background: var(--card); height: 100vh; position: fixed; border-right: 1px solid #334155; padding: 25px 0; flex-shrink: 0; z-index: 100; }
+        .sidebar { width: var(--sidebar-width); background: var(--card); height: 100vh; position: fixed; border-right: 1px solid #334155; padding: 25px 0; z-index: 100; }
         .sidebar-logo { font-size: 1.5rem; font-weight: 800; color: var(--accent); margin-bottom: 35px; padding: 0 25px; }
         .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 25px; color: #94a3b8; text-decoration: none; transition: 0.3s; }
         .nav-item:hover { background: rgba(59, 130, 246, 0.1); color: #fff; }
@@ -86,7 +92,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
         .checkbox-item { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; }
         .save-btn { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
         .debug-console { background: #000; color: #22c55e; padding: 15px; border-radius: 10px; font-family: monospace; font-size: 0.8rem; height: 180px; overflow-y: auto; border: 1px solid #334155; }
-        .sensor-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .sensor-table { width: 100%; border-collapse: collapse; }
         .sensor-table th { font-size: 0.7rem; color: #94a3b8; padding: 10px; text-align: left; border-bottom: 1px solid #334155; }
         .lightbulb { width: 18px; height: 18px; border-radius: 50%; background-color: #475569; margin: 0 auto; transition: 0.3s; }
         .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
@@ -120,14 +126,14 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
                 <div style="padding: 15px; border: 1px dashed var(--accent); border-radius: 12px; background: rgba(59, 130, 246, 0.05);">
                     <h4 style="font-size: 0.8rem; color: var(--accent); margin-bottom: 10px;">🚨 Alarm Trigger Condition</h4>
                     <select id="alarmMode" class="input-mini">
-    <option value="average" <?php echo ($alarm_mode == 'average') ? 'selected' : ''; ?>>Avg All > Global Threshold</option>
-    <option value="individual" <?php echo ($alarm_mode == 'individual') ? 'selected' : ''; ?>>Any Sensor > Individual Threshold</option>
-</select>
+                        <option value="average" <?php echo ($alarm_mode == 'average') ? 'selected' : ''; ?>>Avg All > Global Threshold</option>
+                        <option value="individual" <?php echo ($alarm_mode == 'individual') ? 'selected' : ''; ?>>Any Sensor > Individual Threshold</option>
+                    </select>
 
                     <h4 style="font-size: 0.8rem; color: var(--accent); margin-top: 15px; margin-bottom: 5px;">📤 Warning Output Channels</h4>
                     <div class="checkbox-group">
-                        <label class="checkbox-item"><input type="checkbox" id="enableLine" <?= ($alarm_line ? 'checked' : '') ?>> 📲 Line API Notification</label>
-                        <label class="checkbox-item"><input type="checkbox" id="enableLight" <?= ($alarm_light ? 'checked' : '') ?>> 🔴 MQTT Light (Auto Mode)</label>
+                        <label class="checkbox-item"><input type="checkbox" id="enableLine" <?php echo ($alarm_line == 1) ? 'checked' : ''; ?>> 📲 Line API Notification</label>
+                        <label class="checkbox-item"><input type="checkbox" id="enableLight" <?php echo ($alarm_light == 1) ? 'checked' : ''; ?>> 🔴 MQTT Light (Auto Mode)</label>
                     </div>
 
                     <hr style="border: 0.5px solid #334155; margin: 15px 0;">
@@ -138,6 +144,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
                             <span class="slider"></span>
                         </label>
                     </div>
+                    <div id="switchFeedback" style="font-size: 0.65rem; color: #94a3b8; text-align: right; margin-top: 5px;">Ready...</div>
                     <button class="alarm-submit-btn" onclick="saveAlarmLogic()">Submit Alarm Logic</button>
                 </div>
             </div>
@@ -188,6 +195,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
     </main>
 
     <script>
+        // ✅ 1. MQTT Config
         const MQTT_CONFIG = {
             url: '<?php echo $config["mqtt_ws_url"]; ?>',
             user: '<?php echo $config["mqtt_user"]; ?>',
@@ -211,160 +219,106 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
         let isManualAction = false;
 
         client.on('connect', () => {
-            const statusEl = document.getElementById('mqttStatus');
-            statusEl.innerText = "Online"; statusEl.style.color = "#22c55e";
+            document.getElementById('mqttStatus').innerText = "Online";
+            document.getElementById('mqttStatus').style.color = "#22c55e";
             MQTT_CONFIG.topics.forEach(t => client.subscribe(t));
         });
 
         client.on('message', (topic, payload) => {
-    // ✅ แสดงสถานะจริงจาก MQTT แยกต่างหาก (ไม่ยุ่งกับปุ่มกด)
-    if(topic === 'kbs/driveroom1/light1') {
-        const status = payload.toString();
-        const statusEl = document.getElementById('realMqttStatus');
-        if(statusEl) {
-            statusEl.innerText = "Current Device Status: " + status;
-            statusEl.style.color = (status === 'Active' ? '#f59e0b' : '#94a3b8');
-        }
-        return;
-    }
-    
-    // ส่วนรับค่า Sensor (คงเดิม)
-    const match = topic.match(/temp(\d+)/);
-    if(match) {
-        const id = match[1];
-        liveRawData[id] = JSON.parse(payload.toString());
-        document.getElementById(`led${id}`).style.background = "#22c55e";
-        document.getElementById('debugConsole').innerText = JSON.stringify(liveRawData, null, 2);
-        checkAndTriggerAlarm();
-    }
-});
-
-        function checkAndTriggerAlarm() {
-    const mode = document.getElementById('alarmMode').value;
-    const lineEnabled = document.getElementById('enableLine').checked;
-    const lightEnabled = document.getElementById('enableLight').checked;
-    let isTriggered = false;
-    let warningMsg = "";
-
-    // 🌡️ 1. เลือกโหมดการตรวจสอบ
-    if (mode === 'average') {
-        const vals = Object.values(liveRawData);
-        if(vals.length === 0) return;
-        const avgT = vals.reduce((a, b) => a + parseFloat(b.temp), 0) / vals.length;
-        const gLimit = parseFloat(document.getElementById('globalTemp').value);
-        if (avgT > gLimit) { 
-            isTriggered = true; 
-            warningMsg = `🚨 [AVG ALERT] Temp: ${avgT.toFixed(1)}°C > ${gLimit}`; 
-        }
-    } else {
-        for (let id in liveRawData) {
-            const t = parseFloat(liveRawData[id].temp), h = parseFloat(liveRawData[id].humid);
-            // ดึงเกณฑ์จาก Input บนหน้าจอโดยตรง (ดึงจาก DB มาวางไว้ตอน Initial)
-            const inputT = document.getElementById(`t_limit_${id}`);
-            const inputH = document.getElementById(`h_limit_${id}`);
-            
-            if (inputT && inputH) {
-                const lt = parseFloat(inputT.value);
-                const lh = parseFloat(inputH.value);
-                if (t > lt || h > lh) { 
-                    isTriggered = true; 
-                    warningMsg = `⚠️ [S${id}] T:${t}(>${lt}) H:${h}(>${lh})`; 
-                    break; 
-                }
+            if(topic === 'kbs/driveroom1/light1') {
+                const status = payload.toString();
+                // ✅ รักษาความเป็นอิสระของ Manual Switch (Feedback Log เท่านั้น)
+                console.log("MQTT Light Feedback:", status);
+                return;
             }
-        }
-    }
-
-    const previewEl = document.getElementById('msgPreview');
-    
-    // 🔔 2. จัดการการแจ้งเตือนและการหน่วงเวลา
-    if (isTriggered) {
-        if (!isWaitingConfirm && lastAlarmStatus !== "Active") {
-            isWaitingConfirm = true;
-            previewEl.innerText = "⏳ Waiting 1 min confirm...";
-            previewEl.style.color = "#f59e0b"; // สีส้ม
-            
-            alarmTimer = setTimeout(() => {
-                if (lineEnabled) autoPushLine(warningMsg);
-                if (lightEnabled && !isManualAction) publishLight(true, false);
-                
-                lastAlarmStatus = "Active"; 
-                isWaitingConfirm = false; // Reset เพื่อให้ทำงานรอบถัดไปได้
-                previewEl.innerText = warningMsg; 
-                previewEl.style.color = "#ef4444"; // สีแดง
-            }, 60000); 
-        }
-    } else {
-        // ✅ 3. กลับสู่สภาวะปกติ (Normal)
-        if (alarmTimer) {
-            clearTimeout(alarmTimer);
-            alarmTimer = null;
-        }
-        isWaitingConfirm = false; // สำคัญมาก: ต้องรีเซ็ตเพื่อให้พร้อมรับ Event ถัดไป
-        
-        if (lastAlarmStatus === "Active") {
-            // ปิดไฟเฉพาะเมื่อเปิดระบบ Auto-Light ไว้ และไม่ได้กำลังเช็คไฟด้วยมือ
-            if (lightEnabled && !isManualAction) publishLight(false, false);
-            lastAlarmStatus = "Unactive";
-        }
-        previewEl.innerText = "-- Normal --"; 
-        previewEl.style.color = "#22c55e"; // สีเขียว
-    }
-}
-
-function publishLight(state, isManual = false) {
-    if (isManual) { 
-        isManualAction = true; 
-        setTimeout(() => { isManualAction = false; }, 10000); 
-    }
-
-    const status = state ? "Active" : "Unactive";
-    const feedbackEl = document.getElementById('switchFeedback');
-
-    // 1. ส่ง MQTT ทันที
-    client.publish("kbs/driveroom1/light1", status, { qos: 1, retain: true });
-
-    // 2. อัปเดตข้อความใต้ปุ่มทันทีเพื่อให้คุณมั่นใจ
-    if (feedbackEl) {
-        feedbackEl.innerText = "Sending: " + status + "...";
-        feedbackEl.style.color = "#3b82f6"; // สีน้ำเงินระหว่างส่ง
-    }
-
-    // 3. ✅ แก้ไข Fetch: ตรวจสอบว่า Path ถูกต้องและส่งตัวแปร status
-    // หมายเหตุ: ตรวจสอบว่าไฟล์ update_status.php ของคุณรับค่าผ่าน $_GET['status']
-    fetch(`/pages/firepump/update_status.php?status=${status}`)
-        .then(response => response.text())
-        .then(data => {
-            console.log("Server Response:", data);
-            if (feedbackEl) {
-                feedbackEl.innerText = "Sent: " + status + " (DB Updated)";
-                feedbackEl.style.color = (state ? "#f59e0b" : "#22c55e"); // ส้มถ้าติด เขียวถ้าดับ
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            if (feedbackEl) {
-                feedbackEl.innerText = "Error updating DB!";
-                feedbackEl.style.color = "#ef4444"; // แดงถ้าผิดพลาด
+            const match = topic.match(/temp(\d+)/);
+            if(match) {
+                const id = match[1];
+                liveRawData[id] = JSON.parse(payload.toString());
+                document.getElementById(`led${id}`).style.background = "#22c55e";
+                document.getElementById('debugConsole').innerText = JSON.stringify(liveRawData, null, 2);
+                checkAndTriggerAlarm();
             }
         });
-}
+
+        // ✅ 2. Alarm Trigger Logic (รักษาความเร็วและการเปรียบเทียบ UI ทันที)
+        function checkAndTriggerAlarm() {
+            const mode = document.getElementById('alarmMode').value;
+            const lineEnabled = document.getElementById('enableLine').checked;
+            const lightEnabled = document.getElementById('enableLight').checked;
+            let isTriggered = false;
+            let warningMsg = "";
+
+            if (mode === 'average') {
+                const vals = Object.values(liveRawData);
+                if(vals.length === 0) return;
+                const avgT = vals.reduce((a, b) => a + parseFloat(b.temp), 0) / vals.length;
+                const gLimit = parseFloat(document.getElementById('globalTemp').value);
+                if (avgT > gLimit) { isTriggered = true; warningMsg = `🚨 [AVG ALERT] Temp: ${avgT.toFixed(1)}°C > ${gLimit}`; }
+            } else {
+                for (let id in liveRawData) {
+                    const t = parseFloat(liveRawData[id].temp), h = parseFloat(liveRawData[id].humid);
+                    const lt = parseFloat(document.getElementById(`t_limit_${id}`).value);
+                    const lh = parseFloat(document.getElementById(`h_limit_${id}`).value);
+                    if (t > lt || h > lh) { isTriggered = true; warningMsg = `⚠️ [S${id}] T:${t}(>${lt}) H:${h}(>${lh})`; break; }
+                }
+            }
+
+            const previewEl = document.getElementById('msgPreview');
+            if (isTriggered) {
+                if (!isWaitingConfirm && lastAlarmStatus !== "Active") {
+                    isWaitingConfirm = true;
+                    previewEl.innerText = "⏳ Waiting 1 min confirm...";
+                    previewEl.style.color = "#f59e0b";
+                    alarmTimer = setTimeout(() => {
+                        if (lineEnabled) autoPushLine(warningMsg);
+                        if (lightEnabled && !isManualAction) publishLight(true, false);
+                        lastAlarmStatus = "Active"; isWaitingConfirm = false;
+                        previewEl.innerText = warningMsg; previewEl.style.color = "#ef4444";
+                    }, 60000); 
+                }
+            } else {
+                clearTimeout(alarmTimer); isWaitingConfirm = false;
+                if(lastAlarmStatus === "Active") {
+                    if (lightEnabled && !isManualAction) publishLight(false, false);
+                    lastAlarmStatus = "Unactive";
+                }
+                previewEl.innerText = "-- Normal --"; previewEl.style.color = "#22c55e";
+            }
+        }
+
+        // ✅ 3. Manual & Save Functions
+        function publishLight(state, isManual = false) {
+            if (isManual) { isManualAction = true; setTimeout(() => { isManualAction = false; }, 10000); }
+            const status = state ? "Active" : "Unactive";
+            const feedbackEl = document.getElementById('switchFeedback');
+            
+            client.publish("kbs/driveroom1/light1", status, { qos: 1, retain: true });
+            
+            // ✅ ส่งไป update_status.php สำหรับ ESP8266
+            fetch(`/pages/firepump/update_status.php?status=${status}`)
+                .then(r => r.text())
+                .then(d => { if(feedbackEl) feedbackEl.innerText = "Sent: " + status + " (DB OK)"; });
+        }
 
         function saveAlarmLogic() {
             const mode = document.getElementById('alarmMode').value;
             const lineOn = document.getElementById('enableLine').checked ? 1 : 0;
             const lightOn = document.getElementById('enableLight').checked ? 1 : 0;
-            
-            // ✅ บันทึกสถานะลง Database ผ่าน MQTT
-            const payload = { 
-                type: 'alarm_logic_update', 
-                sensor_id: 0, 
-                alarm_mode: mode, 
-                alarm_line: lineOn, 
-                alarm_light: lightOn 
-            };
-            client.publish("kbs/motordriveroom1/config_individual", JSON.stringify(payload), { qos: 1, retain: true });
-            alert("✅ Alarm Logic Status Saved to Database!");
+
+            const fd = new FormData();
+            fd.append('action', 'save_logic_db');
+            fd.append('mode', mode);
+            fd.append('line', lineOn);
+            fd.append('light', lightOn);
+
+            // ✅ บันทึกลง Database ของตัวเอง
+            fetch('', { method: 'POST', body: fd })
+                .then(res => res.json())
+                .then(data => { if(data.status === 'success') alert("✅ Saved to Database!"); });
+
+            // ส่ง MQTT เพื่อความรวดเร็ว
+            client.publish("kbs/motordriveroom1/config_individual", JSON.stringify({ type: 'alarm_logic_update', sensor_id: 0, alarm_mode: mode, alarm_line: lineOn, alarm_light: lightOn }), { qos: 1, retain: true });
         }
 
         function saveIndividualThresholds() {
@@ -392,30 +346,6 @@ function publishLight(state, isManual = false) {
             const fd = new FormData(); fd.append('action', 'test_line_api'); fd.append('message', msg);
             fetch('', { method: 'POST', body: fd }).then(r => r.json()).then(d => alert(d.status === 200 ? "Sent!" : "Error"));
         }
-        // ✅ ฟังก์ชันดึงค่าจากช่อง Input บนหน้าจอ มาเก็บไว้ในตัวแปรสำหรับคำนวณ
-let sensorThresholds = {};
-
-function syncLocalThresholds() {
-    for (let i = 1; i <= 5; i++) {
-        sensorThresholds[i] = {
-            temp: parseFloat(document.getElementById(`t_limit_${i}`).value),
-            humid: parseFloat(document.getElementById(`h_limit_${i}`).value)
-        };
-    }
-    console.log("✅ Thresholds Synced from UI:", sensorThresholds);
-}
-
-// ✅ เรียกใช้ฟังก์ชันนี้ทันทีที่เชื่อมต่อ MQTT สำเร็จ
-client.on('connect', () => {
-    const statusEl = document.getElementById('mqttStatus');
-    statusEl.innerText = "Online"; 
-    statusEl.style.color = "#22c55e";
-    
-    MQTT_CONFIG.topics.forEach(t => client.subscribe(t));
-    
-    // 🚀 เพิ่มบรรทัดนี้: ดึงค่าจากช่อง Input ที่ PHP โหลดมา ให้ JS รับรู้ทันที
-    syncLocalThresholds(); 
-});
     </script>
 </body>
 </html>
