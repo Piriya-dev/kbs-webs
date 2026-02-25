@@ -2,7 +2,7 @@
 ob_start();
 session_start();
 require_once __DIR__ . '/../../api/hr_db.php'; 
-include 'menu.php'; 
+// include 'menu.php'; 
 date_default_timezone_set('Asia/Bangkok');
 
 // 1. AUTO FETCH LAST DATE
@@ -73,15 +73,38 @@ function getVehicleStyle($type) {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-    
+
+    /* --- 1. GLOBAL RESET & FULL-WIDTH FORCE --- */
+    /* Since the sidebar is removed, we force 100% width globally */
     body { 
         font-family: 'Plus Jakarta Sans', sans-serif; 
-        background-color: #0f172a; /* Deep Navy Background */
+        background-color: #0f172a; 
         color: #f1f5f9; 
         margin: 0; 
-        transition: all 0.3s ease;
+        padding: 0;
+        overflow-x: hidden !important; 
+        width: 100vw;
+        max-width: 100vw;
     }
 
+    /* Force the main container and wrappers to fill the screen */
+    #wrapper, #content-wrapper, main {
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        display: block !important;
+    }
+
+    /* Standardized Header Padding (No more 5rem gap) */
+    .header-container {
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        width: 100% !important;
+        margin-left: 0 !important;
+    }
+
+    /* --- 2. DASHBOARD UI COMPONENTS --- */
     .flat-card { 
         border: 1px solid rgba(255, 255, 255, 0.1); 
         border-radius: 1.5rem; 
@@ -96,11 +119,30 @@ function getVehicleStyle($type) {
         transform: translateY(-4px);
     }
 
-    .header-container { padding-left: 5rem; }
-    
-    select { background-color: #1e293b !important; color: #f1f5f9 !important; border: 1px solid #334155 !important; }
-    
-    @media print { .no-pdf { display: none !important; } .header-container { padding-left: 0; } }
+    /* --- 3. AUTO-SWAP NOTIFICATION --- */
+    #swap-notification {
+        position: fixed;
+        top: -100px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 99999;
+        background: rgba(15, 23, 42, 0.95);
+        backdrop-filter: blur(12px);
+        border: 2px solid rgba(14, 165, 233, 0.5);
+        border-radius: 1rem;
+        padding: 1rem 2rem;
+        transition: top 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    #swap-notification.show { top: 30px; }
+
+    /* Hide elements during print */
+    @media print { 
+        .no-pdf { display: none !important; } 
+        .header-container { padding-left: 0 !important; } 
+    }
 </style>
 </head>
 <body class="p-6" onclick="handleBodyClick(event)">
@@ -108,33 +150,64 @@ function getVehicleStyle($type) {
     <main class="max-w-[1600px] mx-auto">
 
     <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 no-pdf header-container">
-        <div class="flex items-center gap-4">
-            <a href="https://www.kbs.co.th/" target="_blank" class="transition-transform hover:scale-105">
-                <img src="https://www.kbs.co.th/themes/default/assets/static/images/logo-main.webp" alt="KBS Logo" class="h-12 w-auto object-contain">
-            </a>
-            <div class="border-l-2 border-slate-700 pl-4">
-                <h1 class="text-xl font-extrabold text-white uppercase italic leading-none">
-                    KBS <span class="text-sky-500">Fleet Dashboard V1.0</span>
-                </h1>
-                <div class="mt-2 flex flex-col gap-1">
-    <p class="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em] leading-none">
-        ข้อมูลล่าสุด: <span class="text-sky-400"><?= date('d M Y | H:i:s') ?></span>
-    </p>
-</div>
+    <div class="flex items-center gap-4">
+        <a href="https://www.kbs.co.th/" target="_blank" class="transition-transform hover:scale-105">
+            <img src="https://www.kbs.co.th/themes/default/assets/static/images/logo-main.webp" alt="KBS Logo" class="h-12 w-auto object-contain">
+        </a>
+        <div class="border-l-2 border-slate-700 pl-4">
+            <h1 class="text-xl font-extrabold text-white uppercase italic leading-none">
+                KBS <span class="text-sky-500">Fleet Dashboard V1.1</span>
+            </h1>
+            <div class="mt-2 flex flex-col gap-1">
+                <p class="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em] leading-none">
+                    ข้อมูลล่าสุด: <span class="text-sky-400"><?= date('d M Y | H:i:s') ?></span>
+                </p>
             </div>
         </div>
+    </div>
 
-        <div class="flex items-center gap-3 bg-slate-800 p-2 rounded-2xl border border-slate-700 shadow-sm">
-            <select onchange="location.href='?f_site='+this.value" class="bg-transparent font-black text-white outline-none text-xs px-6 cursor-pointer">
-                <?php foreach ($all_sites as $s): ?>
-                    <option value="<?= h($s['site_code']) ?>" <?= ($f_site == $s['site_code']) ? 'selected' : '' ?>><?= h($s['site_name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <button onclick="window.print()" class="bg-slate-700 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-sky-600 transition-colors shadow-sm">
-                <i class="fas fa-print"></i>
-            </button>
+    <div class="flex items-center gap-3 bg-slate-800 p-2 rounded-2xl border border-slate-700 shadow-sm">
+        
+        <div class="flex items-center gap-2 px-2 border-r border-white/10">
+            <!-- <a href="index.php" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-700 hover:text-white transition-all" title="Home">
+                <i class="fas fa-home text-sm"></i>
+            </a>
+             -->
+            <a href="vehicle_import1.php" class="flex items-center gap-2 px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 rounded-xl transition-all border border-sky-500/20 group">
+                <i class="fas fa-file-import text-xs group-hover:rotate-12 transition-transform"></i>
+                <span class="text-[10px] font-bold uppercase tracking-wider">Import CSV</span>
+            </a>
         </div>
-    </header>
+
+        <div class="flex items-center gap-2 px-3 border-r border-white/5">
+            <div class="flex flex-col items-start mr-2">
+                 <span id="screensaver-status-text" class="text-[9px] font-bold text-slate-500 uppercase italic whitespace-nowrap leading-none mb-1">Rotation Off</span>
+                 <select id="wait-time-selector" onchange="resetScreensaver()" class="bg-transparent text-[10px] font-bold text-sky-400 outline-none cursor-pointer">
+                     <option value="5">Wait 5 Min</option>
+                     <option value="4">Wait 4 Min</option>
+                     <option value="3">Wait 3 Min</option>
+                     <option value="2">Wait 2Min</option>
+                     <option value="1" selected>Wait 1 Min</option>
+                 </select>
+            </div>
+            
+            <label class="relative inline-flex items-center cursor-pointer scale-75">
+                <input type="checkbox" id="screensaver-toggle" class="sr-only peer" checked onchange="toggleScreensaver()">
+                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+            </label>
+        </div>
+
+        <select onchange="location.href='?f_site='+this.value" class="bg-transparent font-black text-white outline-none text-xs px-2 cursor-pointer min-w-[100px]">
+            <?php foreach ($all_sites as $s): ?>
+                <option value="<?= h($s['site_code']) ?>" <?= ($f_site == $s['site_code']) ? 'selected' : '' ?>><?= h($s['site_name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+
+        <button onclick="window.print()" class="bg-slate-700 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-sky-600 transition-colors shadow-sm">
+            <i class="fas fa-print"></i>
+        </button>
+    </div>
+</header>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 2xl:gap-10 mb-12 max-w-[2400px] mx-auto">
     
@@ -147,7 +220,7 @@ function getVehicleStyle($type) {
                 <canvas id="healthDonut"></canvas>
                 <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
                     <span class="text-xs 2xl:text-xl font-bold text-white leading-none"><?= number_format($totals['total']) ?> คัน</span>
-                    <span class="text-2xl 2xl:text-6xl font-black text-lime-400 mt-1"><?= $p_ready_y ?>%</span>
+                    <span class="text-2xl 4xl:text-6xl font-black text-lime-400 mt-1"><?= $p_ready_y ?>%</span>
                 </div>
             </div>
 
@@ -163,7 +236,7 @@ function getVehicleStyle($type) {
             <div class="relative w-[clamp(130px,14vw,250px)] h-[clamp(130px,14vw,250px)] mt-10">
                 <canvas id="readyBreakdownDonut"></canvas>
                 <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span class="text-3xl 2xl:text-7xl font-black text-emerald-400"><?= number_format($totals['ready_y']) ?></span>
+                    <span class="text-4xl 2xl:text-7xl font-black text-emerald-400"><?= number_format($totals['ready_y']) ?></span>
                 </div>
             </div>
 
@@ -180,7 +253,7 @@ function getVehicleStyle($type) {
             <div class="relative w-[clamp(130px,14vw,250px)] h-[clamp(130px,14vw,250px)] mt-10">
                 <canvas id="maintenanceDonut"></canvas>
                 <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                    <span class="text-3xl 2xl:text-7xl font-black text-rose-400 leading-none"><?= number_format($totals['ready_n']) ?></span>
+                    <span class="text-3xl 4xl:text-7xl font-black text-rose-400 leading-none"><?= number_format($totals['ready_n']) ?></span>
                 </div>
             </div>
 
@@ -274,37 +347,187 @@ function getVehicleStyle($type) {
         <?php endforeach; ?>
     </div>
     </main>
-
     <script>
-        const cfg = { responsive: true, maintainAspectRatio: false, cutout: '82%', plugins: { legend: { display: false } } };
+    // --- NEW: FORCE HIDE SIDE MENU ON LOAD ---
+    document.addEventListener("DOMContentLoaded", function() {
+    let count = 0;
+    // This ensures that even if KBSG loads slowly, we keep cleaning it
+    const layoutGuard = setInterval(() => {
+        bestAutoHide();
+        count++;
+        if (count > 20) clearInterval(layoutGuard); // Stop after 2 seconds
+    }, 100);
+});
+    // --- Chart.js & Sidebar Logic (Preserved) ---
+    const cfg = { responsive: true, maintainAspectRatio: false, cutout: '82%', plugins: { legend: { display: false } } };
 
-        new Chart(document.getElementById('healthDonut'), {
-            type: 'doughnut', data: {
-                labels: ['Ready', 'Down'],
-                datasets: [{ data: [<?= $totals['ready_y'] ?>, <?= $totals['ready_n'] ?>], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }]
-            }, options: cfg
-        });
+    new Chart(document.getElementById('healthDonut'), {
+        type: 'doughnut', data: {
+            labels: ['Ready', 'Down'],
+            datasets: [{ data: [<?= $totals['ready_y'] ?>, <?= $totals['ready_n'] ?>], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }]
+        }, options: cfg
+    });
 
-        new Chart(document.getElementById('readyBreakdownDonut'), {
-            type: 'doughnut', data: {
-                labels: ['Used', 'Asgn', 'Stb'],
-                datasets: [{ data: [<?= $totals['used'] ?>, <?= $totals['assigned'] ?>, <?= $totals['stb'] ?>], backgroundColor: ['#0ea5e9', '#6366f1', '#fbbf24'], borderWidth: 0 }]
-            }, options: cfg
-        });
+    new Chart(document.getElementById('readyBreakdownDonut'), {
+        type: 'doughnut', data: {
+            labels: ['Used', 'Asgn', 'Stb'],
+            datasets: [{ data: [<?= $totals['used'] ?>, <?= $totals['assigned'] ?>, <?= $totals['stb'] ?>], backgroundColor: ['#0ea5e9', '#6366f1', '#fbbf24'], borderWidth: 0 }]
+        }, options: cfg
+    });
 
-        new Chart(document.getElementById('maintenanceDonut'), {
-            type: 'doughnut', data: {
-                labels: ['PM', 'BRK'],
-                datasets: [{ data: [<?= $totals['pm'] ?>, <?= $totals['brk'] ?>], backgroundColor: ['#f59e0b', '#be123c'], borderWidth: 0 }]
-            }, options: cfg
-        });
+    new Chart(document.getElementById('maintenanceDonut'), {
+        type: 'doughnut', data: {
+            labels: ['PM', 'BRK'],
+            datasets: [{ data: [<?= $totals['pm'] ?>, <?= $totals['brk'] ?>], backgroundColor: ['#f59e0b', '#be123c'], borderWidth: 0 }]
+        }, options: cfg
+    });
 
-        function handleBodyClick(e) {
-            const ignoredTags = ['BUTTON', 'A', 'SELECT', 'INPUT', 'I', 'CANVAS', 'OPTION'];
-            if (!ignoredTags.includes(e.target.tagName)) {
-                if (typeof toggleSidebar === "function") toggleSidebar();
-            }
+    function handleBodyClick(e) {
+        const ignoredTags = ['BUTTON', 'A', 'SELECT', 'INPUT', 'I', 'CANVAS', 'OPTION'];
+        if (!ignoredTags.includes(e.target.tagName)) {
+            if (typeof toggleSidebar === "function") toggleSidebar();
         }
-    </script>
+    }
+
+    // --- Auto-Swap Screensaver Logic ---
+    const currentSite = "<?= h($f_site) ?>";
+    const allSites = <?= json_encode($all_sites) ?>;
+    
+    let targetSiteObj = allSites.find(s => s.site_code !== currentSite) || allSites[0];
+    const targetSiteCode = targetSiteObj.site_code;
+    const targetSiteName = targetSiteObj.site_name;
+
+    let inactivityTimer;
+    let countdownInterval;
+    
+    const toggle = document.getElementById('screensaver-toggle');
+    const waitSelector = document.getElementById('wait-time-selector');
+    const statusText = document.getElementById('screensaver-status-text');
+    const notification = document.getElementById('swap-notification');
+    const timerDisplay = document.getElementById('swap-timer');
+    const nameDisplay = document.getElementById('target-site-name');
+
+    function toggleScreensaver() {
+    if (toggle.checked) {
+        // HIDE MENU IMMEDIATELY
+        bestAutoHide();
+        
+        statusText.innerText = "Monitoring...";
+        statusText.classList.replace('text-slate-500', 'text-sky-400');
+        resetScreensaver();
+    } else {
+        statusText.innerText = "Rotation Off";
+        statusText.classList.replace('text-sky-400', 'text-slate-500');
+        stopAllTimers();
+    }
+}
+    function stopAllTimers() {
+        if(notification) notification.classList.remove('show');
+        clearInterval(countdownInterval);
+        clearTimeout(inactivityTimer);
+    }
+
+    function resetScreensaver() {
+        if (!toggle || !toggle.checked) return;
+        stopAllTimers();
+
+        const waitMinutes = waitSelector ? parseInt(waitSelector.value) : 5;
+        // Logic: Wait Minutes * 60 seconds * 1000ms
+        const selectedWait = waitMinutes * 5 * 1000; 
+        
+        inactivityTimer = setTimeout(startCountdown, selectedWait);
+        statusText.innerText = "Monitoring...";
+    }
+
+    function startCountdown() {
+    if (!toggle.checked) return;
+    
+    // --- TRIGGER THE HAND BOT ---
+    triggerHandBotClick();
+
+    // Update the notification UI for the TV
+    statusText.innerText = "S-Saver Active";
+    let timeLeft = 10; 
+    
+    if (nameDisplay) nameDisplay.innerText = targetSiteName;
+    if (timerDisplay) timerDisplay.innerText = timeLeft;
+    if (notification) notification.classList.add('show');
+
+    countdownInterval = setInterval(() => {
+        timeLeft--;
+        if (timerDisplay) timerDisplay.innerText = timeLeft;
+        
+        if (timeLeft <= 0) {
+            clearInterval(countdownInterval);
+            window.location.href = `?f_site=${targetSiteCode}`;
+        }
+    }, 1000);
+}
+    // Capture events to reset the timer
+    ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(evt => {
+        document.addEventListener(evt, resetScreensaver, { passive: true });
+    });
+/**
+ * HAND BOT: Mimics a physical mouse click at a specific coordinate
+ * This is used to trigger the "Close Sidebar" logic in menu.php
+ */
+function triggerHandBotClick() {
+    console.log("🤖 Hand Bot: Performing virtual click to hide menu...");
+
+    // 1. Define the target (The center of your 50" TV screen)
+    const x = window.innerWidth / 2;
+    const y = window.innerHeight / 2;
+
+    // 2. Create a "Real" Mouse Event
+    const clickEvent = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y
+    });
+
+    // 3. Dispatch the click to the body
+    document.body.dispatchEvent(clickEvent);
+}
+/**
+ * BEST AUTO HIDE: The most stable way to kill ghost space
+ * and ensure a full-screen dashboard on your 50" TV.
+ */
+function bestAutoHide() {
+    console.log("🤖 BestAutoHide: Cleaning layout...");
+    
+    // 1. Force remove all classes that cause the "squeeze"
+    const ghostClasses = ['sidebar-open', 'active', 'toggled', 'sidebar-toggled', 'show'];
+    document.body.classList.remove(...ghostClasses);
+    
+    // 2. Target common wrapper IDs to force 0px margins
+    const wrapper = document.getElementById('wrapper') || document.getElementById('content-wrapper');
+    if (wrapper) {
+        wrapper.style.marginLeft = "0px";
+        wrapper.style.paddingLeft = "0px";
+        wrapper.style.width = "100%";
+    }
+
+    // 3. THE HAND BOT: Perform a virtual click in the center of the screen
+    // This triggers the internal "close" logic of menu.php
+    const x = window.innerWidth / 2;
+    const y = window.innerHeight / 2;
+    const clickEvent = new MouseEvent('click', {
+        view: window, 
+        bubbles: true, 
+        cancelable: true, 
+        clientX: x, 
+        clientY: y
+    });
+    document.body.dispatchEvent(clickEvent);
+    
+    // 4. Force Charts to recalculate for 100% width
+    window.dispatchEvent(new Event('resize'));
+}
+    // Initialize
+    toggleScreensaver();
+</script>
+  
 </body>
 </html>

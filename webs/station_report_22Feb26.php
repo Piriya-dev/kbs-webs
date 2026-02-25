@@ -75,15 +75,15 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
             <input type="datetime-local" id="dateTo">
         </div>
         <div class="input-group">
-            <label>เลือกเครื่องจักร</label>
-            <div style="display: flex; gap: 10px; background: var(--bg-dark); padding: 8px; border-radius: 8px;">
-                <label><input type="checkbox" class="sensor-chk" value="1" checked> S1</label>
-                <label><input type="checkbox" class="sensor-chk" value="2"> S2</label>
-                <label><input type="checkbox" class="sensor-chk" value="3"> S3</label>
-                <label><input type="checkbox" class="sensor-chk" value="4"> S4</label>
-            </div>
-        </div>
-        <div>
+    <label>เลือก Sensor</label>
+    <div style="display: flex; gap: 10px; background: var(--bg-dark); padding: 8px; border-radius: 8px;">
+        <label><input type="checkbox" class="sensor-chk" value="1" checked> S1</label>
+        <label><input type="checkbox" class="sensor-chk" value="2" checked> S2</label>
+        <label><input type="checkbox" class="sensor-chk" value="3" checked> S3</label>
+        <label><input type="checkbox" class="sensor-chk" value="4" checked> S4</label>
+        <label><input type="checkbox" class="sensor-chk" value="5" checked> S5</label>
+    </div>
+</div>
             <button class="btn-query" onclick="loadReportData()">ดึงข้อมูล</button>
             <button class="btn-export" onclick="exportToExcel()">💾 Export CSV</button>
         </div>
@@ -122,11 +122,30 @@ async function loadReportData() {
     const to = document.getElementById('dateTo').value;
     const selectedSensors = Array.from(document.querySelectorAll('.sensor-chk:checked')).map(cb => cb.value);
 
+    // แสดงสถานะ Loading (ถ้ามี)
+    const statsWrapper = document.getElementById('statsWrapper');
+    statsWrapper.innerHTML = '<div style="color:var(--primary-blue); padding:20px;">⌛ กำลังประมวลผลข้อมูล...</div>';
+
     try {
+        // ✅ ส่งค่าช่วงเวลาที่เลือกจาก Datepicker ไปยัง Backend
         const response = await fetch(`/report_fetch_data?from=${from}&to=${to}&sensors=${selectedSensors.join(',')}`);
+        
+        if (!response.ok) throw new Error("Network response was not ok");
+        
         const data = await response.json();
+        
+        if (data.length === 0) {
+            statsWrapper.innerHTML = '<div style="color:var(--text-muted); padding:20px;">❌ ไม่พบข้อมูลในช่วงเวลาที่เลือก</div>';
+            reportChart.data.datasets = [];
+            reportChart.update();
+            return;
+        }
+
         updateChartAndStats(data, selectedSensors);
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+        console.error("Fetch Error:", err);
+        statsWrapper.innerHTML = '<div style="color:#ef4444; padding:20px;">⚠️ เกิดข้อผิดพลาดในการดึงข้อมูล</div>';
+    }
 }
 
 function updateChartAndStats(rawData, selectedSensors) {
@@ -135,12 +154,22 @@ function updateChartAndStats(rawData, selectedSensors) {
     const statsWrapper = document.getElementById('statsWrapper');
     statsWrapper.innerHTML = '';
 
+    // ✅ 1. กำหนดสีประจำตัวให้แต่ละ Sensor เพื่อไม่ให้เส้นทับกัน
+    const sensorColors = {
+        '1': { temp: '#3b82f6', humid: '#60a5fa' }, // Blue shades
+        '2': { temp: '#10b981', humid: '#34d399' }, // Green shades
+        '3': { temp: '#f59e0b', humid: '#fbbf24' }, // Orange shades
+        '4': { temp: '#ef4444', humid: '#f87171' }, // Red shades
+        '5': { temp: '#8b5cf6', humid: '#a78bfa' }  // Purple shades
+    };
+
     selectedSensors.forEach((sID, idx) => {
         const sensorPoints = rawData.filter(d => d.sensor_id == sID);
         if (sensorPoints.length === 0) return;
 
         const temps = sensorPoints.map(d => parseFloat(d.temperature));
         const humids = sensorPoints.map(d => parseFloat(d.humidity));
+        const colorSet = sensorColors[sID] || { temp: '#ffffff', humid: '#94a3b8' };
 
         // --- คำนวณ Min/Max/Avg ---
         const calcStats = (arr) => ({
@@ -152,35 +181,53 @@ function updateChartAndStats(rawData, selectedSensors) {
         const tStats = calcStats(temps);
         const hStats = calcStats(humids);
 
-        // --- สร้าง Stats Card ---
+        // --- สร้าง Stats Card แยกสีตามขอบบนเพื่อให้ดูง่าย ---
         const card = document.createElement('div');
         card.className = 'stats-card';
+        card.style.borderTop = `4px solid ${colorSet.temp}`;
         card.innerHTML = `
-            <div class="stats-title"><span>Unit ${sID} Summary</span> <span style="color:var(--primary-blue)">${sensorPoints.length} Pts</span></div>
+            <div class="stats-title"><span>Unit ${sID} Summary</span> <span style="color:var(--text-muted)">${sensorPoints.length} Pts</span></div>
             <div class="stats-grid">
-                <div class="stats-box"><span class="stats-label">TEMP AVG</span><span class="stats-val val-temp">${tStats.avg}°C</span></div>
-                <div class="stats-box"><span class="stats-label">TEMP MIN/MAX</span><span class="stats-val val-temp">${tStats.min}-${tStats.max}°</span></div>
-                <div class="stats-box"><span class="stats-label">HUMID AVG</span><span class="stats-val val-humid">${hStats.avg}%</span></div>
-                <div class="stats-box"><span class="stats-label">HUMID MIN/MAX</span><span class="stats-val val-humid">${hStats.min}-${hStats.max}</span></div>
+                <div class="stats-box"><span class="stats-label">TEMP AVG</span><span class="stats-val" style="color:${colorSet.temp}">${tStats.avg}°C</span></div>
+                <div class="stats-box"><span class="stats-label">TEMP MIN/MAX</span><span class="stats-val" style="color:${colorSet.temp}">${tStats.min}-${tStats.max}°</span></div>
+                <div class="stats-box"><span class="stats-label">HUMID AVG</span><span class="stats-val" style="color:${colorSet.humid}">${hStats.avg}%</span></div>
+                <div class="stats-box"><span class="stats-label">HUMID MIN/MAX</span><span class="stats-val" style="color:${colorSet.humid}">${hStats.min}-${hStats.max}</span></div>
             </div>
         `;
         statsWrapper.appendChild(card);
 
-        // --- ระบบ Smoothing สำหรับกราฟ ---
+        // --- ระบบ Smoothing ---
         const smooth = (arr) => arr.map((val, i, a) => {
             const subset = a.slice(Math.max(0, i - windowSize), i + 1);
             return (subset.reduce((s, v) => s + v, 0) / subset.length).toFixed(2);
         });
 
+        // ✅ 2. เพิ่ม Dataset โดยใช้สีแยกตาม Sensor
         datasets.push({
-            label: `U${sID} Temp`, data: smooth(temps), borderColor: '#3b82f6', yAxisID: 'y', tension: 0.4, pointRadius: 0
+            label: `U${sID} Temp`, 
+            data: smooth(temps), 
+            borderColor: colorSet.temp, 
+            yAxisID: 'y', 
+            tension: 0.4, 
+            pointRadius: 0,
+            borderWidth: 2
         });
         datasets.push({
-            label: `U${sID} Humid`, data: smooth(humids), borderColor: '#10b981', yAxisID: 'y1', borderDash: [5, 5], tension: 0.4, pointRadius: 0
+            label: `U${sID} Humid`, 
+            data: smooth(humids), 
+            borderColor: colorSet.humid, 
+            yAxisID: 'y1', 
+            borderDash: [5, 5], 
+            tension: 0.4, 
+            pointRadius: 0,
+            borderWidth: 1
         });
     });
 
-    reportChart.data.labels = [...new Set(rawData.map(d => d.created_at.substring(11, 16)))];
+    // ✅ 3. จัดการ Labels ให้แสดงผลแบบ Time Series ที่ถูกต้อง
+    // ใช้ข้อมูลจาก Sensor แรกที่มีเป็นหลักเพื่อให้เวลาตรงกัน
+    const timeLabels = [...new Set(rawData.map(d => d.created_at.substring(11, 16)))];
+    reportChart.data.labels = timeLabels;
     reportChart.data.datasets = datasets;
     reportChart.update();
 }
@@ -194,9 +241,20 @@ function exportToExcel() {
 
 window.onload = () => {
     const now = new Date();
-    document.getElementById('dateTo').value = now.toISOString().slice(0, 16);
-    document.getElementById('dateFrom').value = new Date(now - 86400000).toISOString().slice(0, 16);
+    // ✅ ตั้งค่า To: เป็นเวลาปัจจุบัน
+    const dateTo = now.toISOString().slice(0, 16); 
+    
+    // ✅ ตั้งค่า From: ลบออกไป 24 ชั่วโมง (1 วัน)
+    const last24h = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+    const dateFrom = last24h.toISOString().slice(0, 16);
+
+    document.getElementById('dateTo').value = dateTo;
+    document.getElementById('dateFrom').value = dateFrom;
+
+    // เริ่มต้นสร้างกราฟ
     initChart();
+    
+    // ✅ ดึงข้อมูลย้อนหลัง 24 ชม. ทันทีที่โหลดหน้าเสร็จ
     loadReportData();
 };
 </script>
