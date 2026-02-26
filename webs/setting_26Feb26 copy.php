@@ -254,8 +254,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
             }
         });
 
-        // ✅ 2. Alarm Trigger Logic (รักษาความเร็วและการเปรียบเทียบ UI ทันที)
-        function checkAndTriggerAlarm() {
+ // ✅ ส่วนนี้ต้องอยู่นอกฟังก์ชัน (Global) และห้ามประกาศซ้ำถ้ามีอยู่แล้ว
+// let lastSentTime = 0; 
+// let isAlarmActive = false;
+let confirmTimer = null; // เพิ่มแค่ตัวนี้ตัวเดียว
+
+function checkAndTriggerAlarm() {
     const mode = document.getElementById('alarmMode').value;
     const lineEnabled = document.getElementById('enableLine').checked;
     const lightEnabled = document.getElementById('enableLight').checked;
@@ -264,13 +268,14 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
     let isTriggered = false;
     let warningMsg = "";
 
-    // --- คำนวณค่าจากข้อมูลจริงที่ได้รับ ---
+    // --- 1. รับค่าจาก MQTT (ทำงานปกติ ไม่โดน Delay) ---
     const vals = Object.values(liveRawData);
     if(vals.length === 0) return;
 
     const avgT = vals.reduce((a, b) => a + parseFloat(b.temp || 0), 0) / vals.length;
     const avgH = vals.reduce((a, b) => a + parseFloat(b.humid || 0), 0) / vals.length;
 
+    // --- 2. เช็คเงื่อนไขปัจจุบัน ---
     if (mode === 'average') {
         const gLimitT = parseFloat(document.getElementById('globalTemp').value);
         if (avgT > gLimitT) { 
@@ -279,12 +284,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
         }
     } else {
         for (let id in liveRawData) {
-            const t = parseFloat(liveRawData[id].temp), h = parseFloat(liveRawData[id].humid);
+            const t = parseFloat(liveRawData[id].temp);
             const lt = parseFloat(document.getElementById(`t_limit_${id}`).value);
-            const lh = parseFloat(document.getElementById(`h_limit_${id}`).value);
-            if (t > lt || h > lh) { 
+            if (t > lt) { 
                 isTriggered = true; 
-                warningMsg = `⚠️ [KBS S${id} ALERT]\n🌡️ T:${t}(>${lt}) H:${h}(>${lh})`; 
+                warningMsg = `⚠️ [KBS S${id} ALERT]\n🌡️ T: ${t.toFixed(2)}°C`; 
                 break; 
             }
         }
@@ -292,43 +296,50 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
 
     const currentTime = Date.now();
 
-    // --- Logic การสั่งงาน (Notify & Light) ---
+    // --- 3. 🛡️ ด่านตรวจ (Delay 10s) - มั่นใจได้ว่า MQTT ยังทำงานอยู่ข้างหลัง ---
     if (isTriggered) {
-        // 🔴 สั่งเปิดไฟ MQTT Light ค้างไว้
+        if (!isAlarmActive && lastSentTime === 0) {
+            if (!confirmTimer) {
+                // เริ่มนับ 10 วิ (ตัวเลขบน Bar ยังขยับปกติ MQTT ไม่หลุด)
+                previewEl.innerText = "⏳ Noise Filtering: Re-checking in 10s...";
+                previewEl.style.color = "#f59e0b";
+                confirmTimer = setTimeout(() => { confirmTimer = "READY"; }, 10000);
+            }
+            if (confirmTimer !== "READY") return; // หยุดรอตรงนี้จนกว่าจะครบ 10 วิ
+        }
+
+        // --- 4. 🚨 สั่งงานจริง (หลังผ่าน 10 วิ) ---
         if (lightEnabled && !isManualAction) {
-            publishLight(true, false); 
+            publishLight(true, false); // สั่ง MQTT Light
             isAlarmActive = true;
         }
 
-        // 📲 ส่ง LINE ซ้ำทุกๆ 30 วินาที (ไม่ใช้ setTimeout เพื่อป้องกันคิวซ้อน)
         if (lastSentTime === 0 || (currentTime - lastSentTime) >= 30000) {
-            if (lineEnabled) {
-                autoPushLine(warningMsg);
-            }
+            if (lineEnabled) autoPushLine(warningMsg);
             lastSentTime = currentTime;
-            previewEl.innerText = "🚨 ALARM ACTIVE: Notify Sent";
+            previewEl.innerText = "🚨 ALARM CONFIRMED: Notify Sent";
             previewEl.style.color = "#ef4444";
         } else {
             let nextIn = Math.ceil((30000 - (currentTime - lastSentTime)) / 1000);
-            previewEl.innerText = `⏳ Repeating in ${nextIn}s... (Monitoring)`;
+            previewEl.innerText = `⏳ Repeating in ${nextIn}s...`;
             previewEl.style.color = "#f59e0b";
         }
     } else {
-        // ✅ ระบบกลับสู่สภาวะปกติ (Recovery)
+        // --- 5. ✅ Recovery & Reset (ล้าง Noise) ---
+        if (confirmTimer && confirmTimer !== "READY") clearTimeout(confirmTimer);
+        confirmTimer = null;
+
         if (lastSentTime !== 0 || isAlarmActive) {
-            if (lightEnabled && !isManualAction) publishLight(false, false);
-            if (lineEnabled && lastSentTime !== 0) {
-                autoPushLine("✅ [KBS RECOVERY]\nสถานะกลับสู่ปกติแล้ว");
-            }
-            // รีเซ็ตเพื่อให้เริ่มส่งใหม่ได้ทันทีเมื่อเกิดเหตุการณ์ถัดไป
+            isManualAction = false; 
+            if (lightEnabled) publishLight(false, false); // สั่ง MQTT Light ปิด
+            if (lineEnabled && lastSentTime !== 0) autoPushLine("✅ [KBS RECOVERY]");
             lastSentTime = 0; 
             isAlarmActive = false;
         }
         previewEl.innerText = "-- Normal --"; 
         previewEl.style.color = "#22c55e";
     }
-}
-        // ✅ 3. Manual & Save Functions
+}     // ✅ 3. Manual & Save Functions
         function publishLight(state, isManual = false) {
             if (isManual) { isManualAction = true; setTimeout(() => { isManualAction = false; }, 10000); }
             const status = state ? "Active" : "Unactive";

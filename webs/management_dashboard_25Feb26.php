@@ -173,7 +173,7 @@ function getVehicleStyle($type) {
                 <i class="fas fa-home text-sm"></i>
             </a>
              -->
-            <a href="vehicle_import1.php" class="flex items-center gap-2 px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 rounded-xl transition-all border border-sky-500/20 group">
+            <a href="/vehicle_import_csv" class="flex items-center gap-2 px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 rounded-xl transition-all border border-sky-500/20 group">
                 <i class="fas fa-file-import text-xs group-hover:rotate-12 transition-transform"></i>
                 <span class="text-[10px] font-bold uppercase tracking-wider">Import CSV</span>
             </a>
@@ -253,13 +253,13 @@ function getVehicleStyle($type) {
             <div class="relative w-[clamp(130px,14vw,250px)] h-[clamp(130px,14vw,250px)] mt-10">
                 <canvas id="maintenanceDonut"></canvas>
                 <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                    <span class="text-3xl 4xl:text-7xl font-black text-rose-400 leading-none"><?= number_format($totals['ready_n']) ?></span>
+                    <span class="text-3xl 4xl:text-7xl font-black text-rose-500 leading-none"><?= number_format($totals['ready_n']) ?></span>
                 </div>
             </div>
 
             <div class="mt-6 w-full text-[clamp(13px,0.9vw,20px)] font-bold uppercase space-y-1 px-1">
                 <div class="flex justify-between text-amber-500"><span>ซ่อมบำรุง:</span><span><?= number_format($totals['pm']) ?> (<?= $p_pm ?>%)</span></div>
-                <div class="flex justify-between text-rose-400"><span>เสีย:</span><span><?= number_format($totals['brk']) ?> (<?= $p_brk ?>%)</span></div>
+                <div class="flex justify-between text-rose-500"><span>เสีย:</span><span><?= number_format($totals['brk']) ?> (<?= $p_brk ?>%)</span></div>
             </div>
         </div>
     </div>

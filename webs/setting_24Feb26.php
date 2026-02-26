@@ -249,6 +249,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
             let isTriggered = false;
             let warningMsg = "";
 
+            // 1. ตรวจสอบเงื่อนไข (ตามเดิมของคุณ Khim)
             if (mode === 'average') {
                 const vals = Object.values(liveRawData);
                 if(vals.length === 0) return;
@@ -265,25 +266,46 @@ if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
             }
 
             const previewEl = document.getElementById('msgPreview');
+
+            // 2. Logic การรอ Confirm 1 นาที และการ Reset สำหรับเหตุการณ์ถัดไป
             if (isTriggered) {
-                if (!isWaitingConfirm && lastAlarmStatus !== "Active") {
+                // เริ่มกระบวนการนับถอยหลังใหม่ "เฉพาะ" เมื่อระบบอยู่ในสถานะ Unactive เท่านั้น
+                if (lastAlarmStatus === "Unactive" && !isWaitingConfirm) {
                     isWaitingConfirm = true;
-                    previewEl.innerText = "⏳ Waiting 1 min confirm...";
+                    previewEl.innerText = "⏳ Waiting 1 min to Confirm...";
                     previewEl.style.color = "#f59e0b";
+
+                    // ล้าง Timer เก่าทิ้งก่อนเริ่มใหม่ (Safety First)
+                    if (alarmTimer) clearTimeout(alarmTimer);
+
                     alarmTimer = setTimeout(() => {
                         if (lineEnabled) autoPushLine(warningMsg);
                         if (lightEnabled && !isManualAction) publishLight(true, false);
-                        lastAlarmStatus = "Active"; isWaitingConfirm = false;
-                        previewEl.innerText = warningMsg; previewEl.style.color = "#ef4444";
-                    }, 60000); 
+                        
+                        lastAlarmStatus = "Active"; 
+                        isWaitingConfirm = false;
+                        previewEl.innerText = warningMsg; 
+                        previewEl.style.color = "#ef4444";
+                    }, 60000); // 1 นาทีเป๊ะ
                 }
             } else {
-                clearTimeout(alarmTimer); isWaitingConfirm = false;
-                if(lastAlarmStatus === "Active") {
-                    if (lightEnabled && !isManualAction) publishLight(false, false);
-                    lastAlarmStatus = "Unactive";
+                // ✅ 3. HARD RESET: เมื่อค่ากลับมาเป็นปกติ ระบบจะเตรียมตัวสำหรับ Next Event ทันที
+                if (alarmTimer) {
+                    clearTimeout(alarmTimer);
+                    alarmTimer = null; // ล้างค่า Object ทิ้ง
                 }
-                previewEl.innerText = "-- Normal --"; previewEl.style.color = "#22c55e";
+                
+                isWaitingConfirm = false; 
+
+                // หากก่อนหน้านี้มีการเตือนอยู่ (Active) ให้ปิดไฟและเปลี่ยนสถานะ
+                if (lastAlarmStatus === "Active") {
+                    if (lightEnabled && !isManualAction) publishLight(false, false);
+                    console.log("System Recovered: Resetting for next event...");
+                }
+                
+                lastAlarmStatus = "Unactive"; // คืนค่าเป็น Unactive เพื่อให้รอบหน้าเข้าเงื่อนไข if (isTriggered)
+                previewEl.innerText = "-- Normal --"; 
+                previewEl.style.color = "#22c55e";
             }
         }
 

@@ -1,63 +1,66 @@
 <?php
+// /opt/lampp/htdocs/pages/hr/vehicle_import1.php
 ob_start();
 session_start();
 require_once __DIR__ . '/../../api/hr_db.php'; 
-include 'menu.php'; 
+// Sidebar removed to prevent ghost space on 50" TV
 
-// 1. AUTO FETCH LAST DATE
-$date_query = $mysqli->query("SELECT MAX(report_date) as last_date FROM vehicle_utilization");
-$date_row = $date_query->fetch_assoc();
-$f_date = $date_row['last_date'] ?? date('Y-m-d');
+$msg = "";
+$status = "";
 
-// 2. SITE LISTING
-$site_res = $mysqli->query("SELECT site_code, site_name FROM master_sites WHERE is_active = 1 ORDER BY site_name ASC");
-$all_sites = ($site_res) ? $site_res->fetch_all(MYSQLI_ASSOC) : [];
-$f_site = $_GET['f_site'] ?? ($all_sites[0]['site_code'] ?? '');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
+    $file = $_FILES['csv_file']['tmp_name'];
+    $report_date = $_POST['report_date'] ?? date('Y-m-d');
+    $site_code = $_POST['site_code'] ?? '1';
 
-$current_site_name = "Unknown Site";
-foreach ($all_sites as $s) {
-    if ($s['site_code'] == $f_site) { $current_site_name = $s['site_name']; break; }
-}
+    if (($handle = fopen($file, "r")) !== FALSE) {
+        // Clear old data for that date/site to prevent duplicates
+        $clear_sql = "DELETE FROM vehicle_utilization WHERE report_date = ? AND site_code = ?";
+        $stmt_clear = $mysqli->prepare($clear_sql);
+        $stmt_clear->bind_param("ss", $report_date, $site_code);
+        $stmt_clear->execute();
 
-// 3. FETCH DATA
-$sql = "SELECT * FROM vehicle_utilization WHERE report_date = ? AND site_code = ? ORDER BY vehicle_type ASC";
-$stmt = $mysqli->prepare($sql);
-$stmt->bind_param("ss", $f_date, $f_site);
-$stmt->execute();
-$rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $import_count = 0;
+        
+        while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+            // SKIP LOGIC: check if first column is numeric ID
+            if (!is_numeric($data[0])) {
+                continue;
+            }
 
-// 4. CALCULATION LOGIC
-$totals = ['total' => 0, 'ready_y' => 0, 'ready_n' => 0, 'assigned' => 0, 'used' => 0, 'stb' => 0, 'pm' => 0, 'brk' => 0];
-foreach ($rows as $r) {
-    $in_use = (int)$r['in_use'];
-    $assign = (int)($r['assign_reuire'] ?? 0); 
-    $stb    = (int)$r['standby'];
-    $row_ready_y = $in_use + $assign + $stb;
+            $vehicle_type    = $data[1];
+            $total_amount    = (int)$data[2];
+            $availability_y  = (int)$data[3];
+            $availability_n  = (int)$data[4];
+            $in_use          = (int)$data[5];
+            $assign_require  = (int)($data[6] ?? 0);
+            $standby         = (int)$data[7];
+            $pm_plan         = (int)$data[8];
+            $breakdown       = (int)$data[9];
+            $remarks         = $data[10] ?? '';
 
-    $totals['total']    += (int)$r['total_amount'];
-    $totals['ready_y']  += $row_ready_y; 
-    $totals['ready_n']  += (int)$r['availability_n'];
-    $totals['used']     += $in_use;
-    $totals['assigned'] += $assign; 
-    $totals['stb']      += $stb;
-    $totals['pm']       += (int)$r['pm_plan'];
-    $totals['brk']      += (int)$r['breakdown'];
-}
-$div = max($totals['total'], 1);
-$p_ready_y = round(($totals['ready_y'] / $div) * 100, 1);
-$p_ready_n = round(($totals['ready_n'] / $div) * 100, 1);
-$p_used    = round(($totals['used'] / $div) * 100, 1);
-$p_asgn    = round(($totals['assigned'] / $div) * 100, 1);
-$p_stb     = round(($totals['stb'] / $div) * 100, 1);
-$p_pm      = round(($totals['pm'] / $div) * 100, 1);
-$p_brk     = round(($totals['brk'] / $div) * 100, 1);
-
-function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-function getVehicleStyle($type) {
-    $type = strtolower($type);
-    if (strpos($type, 'truck') !== false) return ['icon' => 'fa-truck', 'color' => 'text-sky-400', 'bg' => 'bg-sky-500/10'];
-    if (strpos($type, 'pickup') !== false) return ['icon' => 'fa-truck-pickup', 'color' => 'text-emerald-400', 'bg' => 'bg-emerald-500/10'];
-    return ['icon' => 'fa-car-side', 'color' => 'text-slate-400', 'bg' => 'bg-slate-500/10'];
+            $sql = "INSERT INTO vehicle_utilization 
+                    (report_date, site_code, vehicle_type, total_amount, availability_y, availability_n, in_use, assign_reuire, standby, pm_plan, breakdown, remarks, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+            
+            $stmt = $mysqli->prepare($sql);
+            $stmt->bind_param("sssiiiiiiiis", 
+                $report_date, $site_code, $vehicle_type, $total_amount, 
+                $availability_y, $availability_n, $in_use, $assign_require, 
+                $standby, $pm_plan, $breakdown, $remarks
+            );
+            
+            if ($stmt->execute()) {
+                $import_count++;
+            }
+        }
+        fclose($handle);
+        $msg = "นำเข้าข้อมูลสำเร็จทั้งหมด $import_count รายการ";
+        $status = "success";
+    } else {
+        $msg = "ไม่สามารถเปิดไฟล์ได้";
+        $status = "error";
+    }
 }
 ?>
 
@@ -65,268 +68,119 @@ function getVehicleStyle($type) {
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <title>Executive Insights - KBS Fleet</title>
+    <title>Import Fleet Data - KBS</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
-    
-    body { 
-        font-family: 'Plus Jakarta Sans', sans-serif; 
-        background-color: #0f172a; /* Deep Navy Background */
-        color: #f1f5f9; 
-        margin: 0; 
-        transition: all 0.3s ease;
-    }
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            margin: 0; 
+            padding: 0;
+            width: 100vw;
+            overflow-x: hidden;
+        }
 
-    .flat-card { 
-        border: 1px solid rgba(255, 255, 255, 0.1); 
-        border-radius: 1.5rem; 
-        background: rgba(30, 41, 59, 0.7); 
-        backdrop-filter: blur(12px);
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .flat-card:hover {
-        border-color: rgba(14, 165, 233, 0.6);
-        transform: translateY(-4px);
-    }
-
-    .header-container { padding-left: 5rem; }
-    
-    select { background-color: #1e293b !important; color: #f1f5f9 !important; border: 1px solid #334155 !important; }
-    
-    @media print { .no-pdf { display: none !important; } .header-container { padding-left: 0; } }
-</style>
+        /* Form Container Polish */
+        .import-card {
+            background: white;
+            border-radius: 2.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f1f5f9;
+        }
+    </style>
 </head>
-<body class="p-6" onclick="handleBodyClick(event)">
+<body class="bg-slate-50 p-6 lg:p-10">
 
-    <main class="max-w-[1600px] mx-auto">
-
-    <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 no-pdf header-container">
-        <div class="flex items-center gap-4">
-            <a href="https://www.kbs.co.th/" target="_blank" class="transition-transform hover:scale-105">
-                <img src="https://www.kbs.co.th/themes/default/assets/static/images/logo-main.webp" alt="KBS Logo" class="h-12 w-auto object-contain">
-            </a>
-            <div class="border-l-2 border-slate-700 pl-4">
-                <h1 class="text-xl font-extrabold text-white uppercase italic leading-none">
-                    KBS <span class="text-sky-500">Fleet Dashboard</span>
-                </h1>
-                <div class="mt-2 flex flex-col gap-1">
-                    <p class="text-slate-500 font-bold uppercase text-[10px] tracking-[0.2em] leading-none">
-                        ข้อมูลล่าสุด: <span class="text-sky-400"><?= date('d M Y | H:i:s') ?></span>
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex items-center gap-3 bg-slate-800 p-2 rounded-2xl border border-slate-700 shadow-sm">
-            <select onchange="location.href='?f_site='+this.value" class="bg-transparent font-black text-white outline-none text-xs px-6 cursor-pointer">
-                <?php foreach ($all_sites as $s): ?>
-                    <option value="<?= h($s['site_code']) ?>" <?= ($f_site == $s['site_code']) ? 'selected' : '' ?>><?= h($s['site_name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <button onclick="window.print()" class="bg-slate-700 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-sky-600 transition-colors shadow-sm">
-                <i class="fas fa-print"></i>
-            </button>
-        </div>
-    </header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-12">
+    <div class="max-w-4xl mx-auto">
         
-        <div class="lg:col-span-7 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="flat-card p-6 flex flex-col items-center justify-center relative min-h-[380px]">
-                <p class="text-[14px] font-bold text-yellow-300 uppercase absolute top-8 italic tracking-widest">% Fleet Health</p>
-                <div class="relative w-40 h-40 mt-4">
-                    <canvas id="healthDonut"></canvas>
-                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                        <span class="text-lg font-bold text-white leading-none"><?= number_format($totals['total']) ?> คัน</span>
-                        <span class="text-2xl font-black text-lime-400 mt-1"><?= $p_ready_y ?>%</span>
+        <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div class="flex items-center gap-4">
+                <a href="https://www.kbs.co.th/" target="_blank">
+                    <img src="https://www.kbs.co.th/themes/default/assets/static/images/logo-main.webp" alt="KBS Logo" class="h-10 w-auto">
+                </a>
+                <div class="border-l-2 border-slate-200 pl-4">
+                    <h1 class="text-2xl font-black text-slate-900 italic uppercase leading-none">
+                        CSV <span class="text-sky-600">Import</span>
+                    </h1>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-1">Vehicle Utilization System</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <a href="management_dashboard.php" class="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:text-sky-600 hover:border-sky-400 transition-all shadow-sm group font-bold">
+                    <i class="fas fa-chart-line text-xs group-hover:scale-110 transition-transform"></i>
+                    <span class="text-xs uppercase italic tracking-wider">Management Dashboard</span>
+                </a>
+            </div>
+        </header>
+
+        <?php if ($msg): ?>
+            <div class="mb-6 p-4 rounded-2xl <?= $status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700' ?> font-bold text-sm flex items-center shadow-sm">
+                <i class="fas <?= $status === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle' ?> mr-3 text-lg"></i>
+                <?= $msg ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="import-card p-8 lg:p-12">
+            <form action="" method="POST" enctype="multipart/form-data" class="space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Select Report Date</label>
+                        <input type="date" name="report_date" value="<?= date('Y-m-d') ?>" required 
+                               class="w-full bg-slate-50 border-2 border-slate-50 focus:border-sky-500 focus:bg-white rounded-2xl p-4 font-bold text-slate-700 transition-all outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black text-slate-400 uppercase mb-3 tracking-widest">Target Site</label>
+                        <select name="site_code" class="w-full bg-slate-50 border-2 border-slate-50 focus:border-sky-500 focus:bg-white rounded-2xl p-4 font-bold text-slate-700 transition-all outline-none">
+                            <option value="1">KBS Khonburi (ครบุรี)</option>
+                            <option value="2">KBS Sikhiu (สีคิ้ว)</option>
+                        </select>
                     </div>
                 </div>
-                <div class="mt-8 w-full text-[13px] font-bold space-y-2 px-4">
-                    <div class="flex justify-between text-lime-400 border-b border-white/5 pb-1"><span>พร้อมใช้งาน:</span><span><?= $p_ready_y ?>%</span></div>
-                    <div class="flex justify-between text-red-400"><span>ไม่พร้อมใช้งาน:</span><span><?= $p_ready_n ?>%</span></div>
-                </div>
-            </div>
 
-            <div class="flat-card p-6 flex flex-col items-center justify-center relative min-h-[380px]">
-                <p class="text-[14px] font-bold text-emerald-300 uppercase absolute top-8 italic">พร้อมใช้งาน(คัน)</p>
-                <div class="relative w-36 h-36 mt-4">
-                    <canvas id="readyBreakdownDonut"></canvas>
-                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span class="text-3xl font-black text-emerald-400"><?= number_format($totals['ready_y']) ?></span>
-                    </div>
-                </div>
-                <div class="mt-8 w-full text-[11px] font-bold uppercase space-y-2 px-2">
-                <div class="flex justify-between text-sky-400">
-    <span>กำลังใช้งาน:</span>
-    <span><?= number_format($totals['used']) ?> คัน (<?= $p_used ?>%)</span>
-</div>
-<div class="flex justify-between text-indigo-400">
-        <span>รอมอบหมาย:</span>
-        <span><?= number_format($totals['assigned']) ?> คัน (<?= $p_asgn ?>%)</span>
-    </div>
-
-    <div class="flex justify-between text-amber-500">
-        <span>รอใช้งาน:</span>
-        <span><?= number_format($totals['stb']) ?> คัน (<?= $p_stb ?>%)</span>
-    </div>
-                </div>
-            </div> 
-
-
-            <div class="flat-card p-6 flex flex-col items-center justify-center relative min-h-[380px]">
-                <p class="text-[14px] font-bold text-rose-300 uppercase absolute top-8 italic">ไม่พร้อมใช้งาน(คัน)</p>
-                <div class="relative w-36 h-36 mt-4">
-                    <canvas id="maintenanceDonut"></canvas>
-                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-                        <span class="text-2xl font-black text-rose-400 leading-none"><?= number_format($totals['ready_n']) ?></span>
-                    </div>
-                </div>
-                <div class="mt-8 w-full text-[11px] font-bold uppercase space-y-2 px-2">
-                <div class="mt-8 w-full text-[11px] font-bold uppercase space-y-2 px-2">
-    <div class="flex justify-between text-amber-500">
-        <span>ซ่อมบำรุง:</span>
-        <span><?= number_format($totals['pm']) ?> คัน (<?= $p_pm ?>%)</span>
-    </div>
-
-    <div class="flex justify-between text-rose-400">
-        <span>เสีย:</span>
-        <span><?= number_format($totals['brk']) ?> คัน (<?= $p_brk ?>%)</span>
-    </div>
-</div>
-                </div>
-            </div>
-        </div>
-
-
-        <div class="lg:col-span-5 flex flex-col gap-4">
-    <div class="flat-card p-6 flex flex-col justify-between h-full bg-emerald-500/5 border-t-4 border-emerald-500">
-        <div class="flex items-center gap-2 mb-4 border-b border-white/10 pb-2">
-            <i class="fas fa-check-circle text-emerald-400"></i>
-            <span class="text-[14px] text-emerald-400 font-black uppercase italic tracking-widest">สถานะพร้อมใช้งาน: <?= number_format($totals['ready_y']) ?> คัน</span>
-        </div>
-        
-        <div class="space-y-4">
-            <div class="flex justify-between items-end">
-                <span class="text-[14px] text-sky-400 font-bold">กำลังใช้งาน</span>
-                <div class="flex items-baseline gap-2">
-                    <span class="text-4xl font-black text-white italic leading-none"><?= number_format($totals['used']) ?></span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase">คัน</span>
-                </div>
-            </div>
-
-            <div class="flex justify-between items-end">
-                <span class="text-[14px] text-indigo-400 font-bold">รอมอบหมาย</span>
-                <div class="flex items-baseline gap-2">
-                    <span class="text-4xl font-black text-white italic leading-none"><?= number_format($totals['assigned']) ?></span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase">คัน</span>
-                </div>
-            </div>
-
-            <div class="flex justify-between items-end">
-                <span class="text-[14px] text-amber-400 font-bold">รอใช้งาน</span>
-                <div class="flex items-baseline gap-2">
-                    <span class="text-4xl font-black text-white italic leading-none"><?= number_format($totals['stb']) ?></span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase">คัน</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="flat-card p-6 flex flex-col justify-between h-full bg-rose-900/10 border-t-4 border-rose-600">
-        <div class="flex items-center gap-2 mb-4 border-b border-white/10 pb-2">
-            <i class="fas fa-tools text-rose-500"></i>
-            <span class="text-[14px] text-rose-500 font-black uppercase italic tracking-widest">สถานะไม่พร้อมใช้งาน: <?= number_format($totals['ready_n']) ?> คัน</span>
-        </div>
-
-        <div class="space-y-4">
-            <div class="flex justify-between items-end">
-                <span class="text-[14px] text-amber-500 font-bold">ซ่อมแซม (PM)</span>
-                <div class="flex items-baseline gap-2">
-                    <span class="text-4xl font-black text-white italic leading-none"><?= number_format($totals['pm']) ?></span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase">คัน</span>
-                </div>
-            </div>
-
-            <div class="flex justify-between items-end">
-                <span class="text-[14px] text-rose-500 font-bold">เสีย (Breakdown)</span>
-                <div class="flex items-baseline gap-2">
-                    <span class="text-4xl font-black text-white italic leading-none"><?= number_format($totals['brk']) ?></span>
-                    <span class="text-[10px] text-slate-500 font-bold uppercase">คัน</span>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-       
-    </div>
-
-    <div class="flex items-center gap-4 mb-6 mt-16 italic border-b border-slate-700 pb-3 no-pdf">
-        <h2 class="text-sm font-black text-slate-400 uppercase tracking-[0.4em] leading-none">📍 Fleet Detail: <?= h($current_site_name) ?></h2>
-    </div>
-    
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-16">
-        <?php foreach ($rows as $r): $style = getVehicleStyle($r['vehicle_type']); ?>
-            <div class="flat-card p-6 flex flex-col items-center text-center group border border-slate-700">
-                <div class="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <i class="fas <?= $style['icon'] ?> <?= $style['color'] ?> text-2xl"></i>
-                </div>
-                <h4 class="font-bold text-slate-200 uppercase italic text-[12px] leading-tight mb-5 tracking-tight"><?= h($r['vehicle_type']) ?></h4>
-                
-                <div class="w-full space-y-4">
-                    <div class="space-y-1">
-                        <p class="text-[10px] font-bold text-emerald-400 uppercase italic leading-none">พร้อมใช้งาน</p>
-                        <div class="grid grid-cols-3 gap-1.5 font-bold italic">
-                            <div class="bg-slate-900/80 p-2 rounded-lg text-sky-400 text-[14px]"><span class="block text-[8px] text-slate-500 uppercase">ใช้งาน</span><?= (int)$r['in_use'] ?></div>
-                            <div class="bg-slate-900/80 p-2 rounded-lg text-indigo-400 text-[14px]"><span class="block text-[8px] text-slate-500 uppercase">มอบหมาย</span><?= (int)($r['assign_reuire'] ?? 0) ?></div>
-                            <div class="bg-slate-900/80 p-2 rounded-lg text-amber-400 text-[14px]"><span class="block text-[8px] text-slate-500 uppercase">รอใช้</span><?= (int)$r['standby'] ?></div>
+                <div class="relative">
+                    <input type="file" name="csv_file" id="csv_file" accept=".csv" class="hidden" required onchange="updateFileName(this)">
+                    <label for="csv_file" class="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-[2.5rem] p-12 cursor-pointer hover:border-sky-400 hover:bg-sky-50/30 transition-all group">
+                        <div class="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4 group-hover:bg-sky-100 transition-colors">
+                            <i class="fas fa-file-csv text-3xl text-slate-400 group-hover:text-sky-600"></i>
                         </div>
-                    </div>
-                    <div class="space-y-1 border-t border-slate-800 pt-3">
-                        <p class="text-[10px] font-bold text-rose-400 uppercase italic leading-none">ไม่พร้อมใช้งาน</p>
-                        <div class="grid grid-cols-2 gap-1.5 font-bold italic">
-                            <div class="bg-slate-900/80 p-2 rounded-lg text-orange-400 text-[14px]"><span class="block text-[8px] text-slate-500 uppercase">ซ่อม</span><?= (int)$r['pm_plan'] ?></div>
-                            <div class="bg-slate-900/80 p-2 rounded-lg text-rose-500 text-[14px]"><span class="block text-[8px] text-slate-500 uppercase">เสีย</span><?= (int)$r['breakdown'] ?></div>
-                        </div>
-                    </div>
+                        <span id="file-name" class="text-sm font-bold text-slate-500 group-hover:text-slate-700 italic">Drop your Fleet CSV file here or click to browse</span>
+                        <p class="text-[9px] text-slate-400 uppercase mt-2 tracking-widest font-bold">Supported format: .CSV only</p>
+                    </label>
                 </div>
+
+                <button type="submit" class="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black uppercase tracking-[0.2em] hover:bg-sky-600 hover:-translate-y-1 transition-all shadow-xl shadow-slate-200">
+                    Process and Import Data
+                </button>
+            </form>
+        </div>
+
+        <div class="mt-10 flex gap-4">
+            <div class="flex-1 p-6 bg-blue-50/50 rounded-3xl border border-blue-100">
+                <h4 class="text-[10px] font-black text-blue-600 uppercase mb-2 italic">Format Note:</h4>
+                <p class="text-[10px] text-blue-700 leading-relaxed font-medium">
+                    ระบบจะเริ่มอ่านข้อมูลจากแถวที่มีหมายเลข ID (บรรทัดที่ 5) โปรดใช้ Template มาตรฐานเท่านั้น
+                </p>
             </div>
-        <?php endforeach; ?>
+            <div class="flex-1 p-6 bg-amber-50/50 rounded-3xl border border-amber-100">
+                <h4 class="text-[10px] font-black text-amber-600 uppercase mb-2 italic">CSV Warning:</h4>
+                <p class="text-[10px] text-amber-700 leading-relaxed font-medium">
+                    หากข้อมูลผิดพลาด ระบบจะลบข้อมูลของ Site และวันที่ระบุไว้ก่อนทำการ Insert ใหม่
+                </p>
+            </div>
+        </div>
     </div>
-    </main>
 
     <script>
-        const cfg = { responsive: true, maintainAspectRatio: false, cutout: '82%', plugins: { legend: { display: false } } };
-
-        new Chart(document.getElementById('healthDonut'), {
-            type: 'doughnut', data: {
-                labels: ['Ready', 'Down'],
-                datasets: [{ data: [<?= $totals['ready_y'] ?>, <?= $totals['ready_n'] ?>], backgroundColor: ['#10b981', '#f43f5e'], borderWidth: 0 }]
-            }, options: cfg
-        });
-
-        new Chart(document.getElementById('readyBreakdownDonut'), {
-            type: 'doughnut', data: {
-                labels: ['Used', 'Asgn', 'Stb'],
-                datasets: [{ data: [<?= $totals['used'] ?>, <?= $totals['assigned'] ?>, <?= $totals['stb'] ?>], backgroundColor: ['#0ea5e9', '#6366f1', '#fbbf24'], borderWidth: 0 }]
-            }, options: cfg
-        });
-
-        new Chart(document.getElementById('maintenanceDonut'), {
-            type: 'doughnut', data: {
-                labels: ['PM', 'BRK'],
-                datasets: [{ data: [<?= $totals['pm'] ?>, <?= $totals['brk'] ?>], backgroundColor: ['#f59e0b', '#be123c'], borderWidth: 0 }]
-            }, options: cfg
-        });
-
-        function handleBodyClick(e) {
-            const ignoredTags = ['BUTTON', 'A', 'SELECT', 'INPUT', 'I', 'CANVAS', 'OPTION'];
-            if (!ignoredTags.includes(e.target.tagName)) {
-                if (typeof toggleSidebar === "function") toggleSidebar();
+        function updateFileName(input) {
+            if (input.files && input.files[0]) {
+                const fileName = input.files[0].name;
+                const display = document.getElementById('file-name');
+                display.innerText = "Selected: " + fileName;
+                display.classList.remove('text-slate-500');
+                display.classList.add('text-sky-600', 'not-italic');
             }
         }
     </script>

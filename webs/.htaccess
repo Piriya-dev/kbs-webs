@@ -2,27 +2,43 @@ RewriteEngine On
 RewriteBase /
 
 # --- 1. ROOT REDIRECT ---
-# เข้าหน้าแรกให้ไป Login ทันที
 RewriteRule ^$ motor_drive_room_login [R,L]
 
-# --- 2. CLEAN URL MAPPING (ทำ Internal Rewrite ก่อน) ---
-# จับคู่ Pretty URL เข้ากับไฟล์จริงใน Server
-# ✅ ตรวจสอบว่าไฟล์อยู่ที่ pages/firepump/setting.php จริงหรือไม่
-RewriteRule ^motor_drive_room_login$ pages/firepump/motor_drive_status_login.php [NC,L]
-RewriteRule ^motor_drive_room_dashboard$ pages/firepump/motor_drive_status.php [NC,L]
-RewriteRule ^motor_drive_room_settings$ pages/firepump/setting.php [NC,L]
-RewriteRule ^motor_drive_room_report$ pages/firepump/station_report.php [NC,L]
-RewriteRule ^motor_drive_room_logout$ pages/firepump/motor_drive_status_logout.php [NC,L]
-RewriteRule ^it_server_room_status$ pages/firepump/it_server_room_status.php [NC,L]
-RewriteRule ^report_fetch_data$ pages/firepump/report_fetch_data.php [NC,L]
+# --- 2. CLEAN URL MAPPING (สำคัญมาก) ---
+# ระบุ Path ให้ชัดเจนและใช้ [L] เพื่อหยุดการประมวลผลกฎข้ออื่นหากเจอแมตช์นี้
+RewriteRule ^motor_drive_room_login$ pages/firepump/motor_drive_status_login.php [L,NC]
+RewriteRule ^motor_drive_room_dashboard$ pages/firepump/motor_drive_status.php [L,NC]
+RewriteRule ^motor_drive_room_status$ pages/firepump/motor_drive_status_debug.php [L,NC]
+RewriteRule ^motor_drive_room_settings$ pages/firepump/setting.php [L,NC]
+RewriteRule ^motor_drive_room_report$ pages/firepump/station_report.php [L,NC]
+RewriteRule ^motor_drive_room_logout$ pages/firepump/motor_drive_status_logout.php [L,NC]
+RewriteRule ^motor_drive_debug_system$ pages/firepump/debug_system.php [L,NC]
+RewriteRule ^fleet_dashboard$ pages/hr/management_dashboard.php [L,NC]
+RewriteRule ^firepump_dashboard$ pages/firepump/firepump.php [L,NC]
+RewriteRule ^milling_machine_dashboard$ pages/engineering/milling_machine_dashboard.php [L,NC]
+RewriteRule ^vehicle_import_csv$ pages/hr/vehicle_import1.php [L,NC]
 
-# --- 3. EXTERNAL REDIRECT (ป้องกันคนเข้า .php ตรงๆ) ---
-# ใช้ RewriteCond เช็ค THE_REQUEST เพื่อป้องกันการวนลูป (Looping)
+# --- 3. BLOCK DIRECT ACCESS (Optional) ---
+# ป้องกันคนเข้า .php ตรงๆ โดยใช้ THE_REQUEST เพื่อเลี่ยงการวนลูป (Looping)
 RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/setting\.php [NC]
 RewriteRule ^ /motor_drive_room_settings [R=301,L]
-
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/motor_drive_status_login\.php [NC]
+RewriteRule ^ /motor_drive_room_login [R=301,L]
 RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/motor_drive_status\.php [NC]
 RewriteRule ^ /motor_drive_room_dashboard [R=301,L]
-
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/motor_drive_status_debug\.php [NC]
+RewriteRule ^ /motor_drive_room_status [R=301,L]
 RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/station_report\.php [NC]
 RewriteRule ^ /motor_drive_room_report [R=301,L]
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/motor_drive_status_logout\.php [NC]
+RewriteRule ^ /motor_drive_room_logout [R=301,L]
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/debug_system\.php [NC]
+RewriteRule ^ /motor_drive_debug_system [R=301,L]
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/hr/management_dashboard\.php [NC]
+RewriteRule ^ /fleet_dashboard [R=301,L]
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/firepump/firepump\.php [NC]
+RewriteRule ^ /firepump_dashboard [R=301,L]
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/engineering/milling_machine_dashboard\.php [NC]
+RewriteRule ^ /milling_machine_dashboard [R=301,L]
+RewriteCond %{THE_REQUEST} ^[A-Z]{3,}\s/pages/hr/vehicle_import1\.php [NC]
+RewriteRule ^ /vehicle_import_csv [R=301,L]

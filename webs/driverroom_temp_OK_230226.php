@@ -1,9 +1,11 @@
 <?php
 /**
- * setting.php - Full Verified Version
- * Features: 1-Min Confirm (Line & Light), Manual Switch Override, Full UI Sidebar/Status
+ * station_status_dashboard.php - MASTER REFERENCE VERSION
+ * Features: 1-Row Auto-fit, Individual T/H Stats, Trend Chart, Spaced Design.
  */
 $config = require 'config.php';
+session_set_cookie_params(31536000);
+ini_set('session.gc_maxlifetime', 31536000);
 session_start();
 
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
@@ -11,364 +13,220 @@ if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
     exit;
 }
 
-// --- 1. ดึงค่าจาก Database ---
-$global_temp = 27.0; $global_humid = 65.0;
-$alarm_mode = 'individual';
-$alarm_line = 1; $alarm_light = 1;
-$sensor_configs = [];
-for ($i = 1; $i <= 5; $i++) { $sensor_configs[$i] = ['temp' => 40.0, 'humid' => 60.0]; }
+// --- DATABASE FETCH (Global ID 0 & Individual ID 1-4) ---
+$db_temp_limit = 24.00;
+$db_humid_limit = 60.00;
+$sensor_thresholds = [];
 
 try {
     $db_host = '127.0.0.1'; $db_name = 'kbs_eng_db'; $db_user = 'kbs-ccsonline'; $db_pass = '@Kbs2024!#';                   
     $conn = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
-    $stmt = $conn->query("SELECT * FROM threshold_configs WHERE sensor_id BETWEEN 0 AND 5");
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $id = (int)$row['sensor_id'];
-        if ($id === 0) {
-            $global_temp = (float)$row['temp_threshold'];
-            $global_humid = (float)$row['humid_threshold'];
-            $alarm_mode = $row['alarm_mode'] ?? 'individual';
-            $alarm_line = (int)($row['alarm_line'] ?? 1);
-            $alarm_light = (int)($row['alarm_light'] ?? 1);
-        } else {
-            $sensor_configs[$id] = ['temp' => (float)$row['temp_threshold'], 'humid' => (float)$row['humid_threshold']];
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    
+    $stmt = $conn->query("SELECT sensor_id, temp_threshold, humid_threshold FROM threshold_configs WHERE sensor_id BETWEEN 0 AND 4");
+    while($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $sid = (int)$row['sensor_id'];
+        if ($sid === 0) { 
+            $db_temp_limit = (float)$row['temp_threshold']; 
+            $db_humid_limit = (float)$row['humid_threshold']; 
+        } else { 
+            $sensor_thresholds[$sid] = [
+                'temp' => (float)$row['temp_threshold'], 
+                'humid' => (float)$row['humid_threshold']
+            ]; 
         }
     }
-} catch (PDOException $e) { }
-
-if (isset($_POST['action']) && $_POST['action'] === 'test_line_api') {
-    header('Content-Type: application/json');
-    $accessToken = 'C2wBOtd3y8bXw7m8TCPU6kE3y8cMFi1w4J98wC1SZiqirrYWMqCSrPcQKjwus39B/f/9Ev1bpE1FAWoDN4/Nq2zcACx0r0K88juxk+Rq4fbZgTQCRUgM5of+rl2tOsFR0URBFmSeVHeOAfhTe0xhQQdB04t89/1O/w1cDnyilFU='; 
-    $userId = 'Ub4e26942b3c80454751b2d60939fb2ec'; 
-    $userMsg = $_POST['message'] ?? "KBS Test Message";
-    $data = ['to' => $userId, 'messages' => [['type' => 'text', 'text' => $userMsg]]];
-    $ch = curl_init('https://api.line.me/v2/bot/message/push');
-    curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . $accessToken]);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    $result = curl_exec($ch); $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-    echo json_encode(['status' => $httpCode]); exit;
-}
+} catch (PDOException $e) {}
 ?>
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="utf-8" />
-    <title>Advanced Settings - KBS</title>
-    <link rel="stylesheet" href="/pages/firepump/css/style.css">
+    <title>KBS-Drive Monitoring (Perfect Version)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.rawgit.com/Mikhus/canvas-gauges/master/gauge.min.js"></script>
+    <link rel="stylesheet" href="/pages/firepump/css/style.css">
     <style>
-        :root { --card: #1e293b; --accent: #3b82f6; --bg: #0f172a; --line-green: #06c755; --orange: #f59e0b; }
-        body { background-color: var(--bg); color: #fff; font-family: 'Plus Jakarta Sans', sans-serif; display: flex; }
-        .sidebar { width: 260px; background: var(--card); height: 100vh; position: fixed; border-right: 1px solid #334155; padding: 20px; }
-        .nav-item { display: block; padding: 12px; color: #94a3b8; text-decoration: none; margin-bottom: 8px; border-radius: 8px; transition: 0.3s; }
-        .nav-item.active { background: var(--accent); color: white; font-weight: bold; }
-        .main-content { margin-left: 260px; width: calc(100% - 260px); padding: 20px; }
-        .topbar { display: flex; justify-content: space-between; align-items: center; background: var(--card); padding: 15px 25px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #334155; }
-        .settings-card { background: var(--card); padding: 25px; border-radius: 15px; margin-bottom: 20px; border: 1px solid #334155; }
-        .input-mini { background: #0f172a; border: 1px solid #334155; color: #fff; padding: 10px; border-radius: 8px; width: 100%; font-weight: bold; }
-        .alarm-submit-btn { background: var(--orange); color: #000; border: none; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 800; width: 100%; margin-top: 15px; text-transform: uppercase; }
-        .checkbox-group { display: flex; flex-direction: column; gap: 12px; margin-top: 15px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; }
-        .checkbox-item { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 0.9rem; }
-        .save-btn { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 10px; }
-        .debug-console { background: #000; color: #22c55e; padding: 15px; border-radius: 10px; font-family: monospace; font-size: 0.8rem; height: 180px; overflow-y: auto; border: 1px solid #334155; }
-        .sensor-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .sensor-table th { font-size: 0.7rem; color: #94a3b8; padding: 10px; text-align: left; border-bottom: 1px solid #334155; }
-        .lightbulb { width: 18px; height: 18px; border-radius: 50%; background-color: #475569; margin: 0 auto; transition: 0.3s; }
-        .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .4s; border-radius: 22px; }
-        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
-        input:checked + .slider { background-color: var(--orange); }
-        input:checked + .slider:before { transform: translateX(22px); }
+        body { display: flex; min-height: 100vh; margin: 0; background: #0f172a; font-family: sans-serif; }
+        .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; width: 100%; box-sizing: border-box; overflow: hidden; }
+        
+        .dashboard-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+            gap: 12px; 
+            margin-bottom: 15px; 
+        }
+
+        @media (min-width: 1600px) { .dashboard-grid { grid-template-columns: repeat(4, 1fr); } }
+
+        .card { padding: 15px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; position: relative; display: flex; flex-direction: column; }
+        .chart-container { flex: 1; min-height: 320px; background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+        
+        .topbar { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px 25px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #334155; }
+        .header-stat-box { display: flex; align-items: center; gap: 12px; padding: 6px 15px; border-radius: 10px; background: rgba(15, 23, 42, 0.8); border: 1px solid #334155; }
+        
+        .high-temp-alert { animation: pulse-red 1.5s infinite; background: #ef4444 !important; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 100% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); } }
+        
+        canvas { max-width: 100%; height: auto !important; }
     </style>
 </head>
 <body class="app-container">
-    <aside class="sidebar">
-        <div class="sidebar-nav">
-            <a href="/motor_drive_room_dashboard" class="nav-item">📊 Dashboard</a>
-            <a href="/motor_drive_room_report" class="nav-item">📈 Report</a>
+
+<aside class="sidebar">
+    <div class="sidebar-nav">
+        <a href="/motor_drive_room_dashboard" class="nav-item active">📊 Dashboard</a>
+        <?php if ($_SESSION['role'] === 'admin'): ?>
+            <a href="/motor_drive_room_settings" class="nav-item">⚙️ Settings</a>
             <a href="/motor_drive_room_status" class="nav-item">🌐 Status</a>
-            <a href="/motor_drive_debug_system" class="nav-item">🌐 Debug System</a>
-            <a href="#" class="nav-item active">⚙️ Settings</a>
+            <a href="/motor_drive_debug_system" class="nav-item">🔍 Debug</a>
+            <a href="/motor_drive_room_report" class="nav-item">📈 Report</a>
+        <?php endif; ?>
+    </div>
+</aside>
 
+<main class="main-content">
+    <header class="topbar">
+      <div style="display:flex; align-items:center; gap:15px;">
+        <img src="https://www.kbs.co.th/themes/default/assets/static/images/logo-main.webp" alt="Logo" style="height:28px;">
+        <div id="realtimeClock" style="font-family:monospace; color:#3b82f6; font-size:1.1rem; font-weight:bold;">--:--:--</div>
+      </div>
+      
+      <div style="display:flex; gap:12px; align-items:center;">
+        <div style="background:rgba(0,0,0,0.2); padding:8px 15px; border-radius:10px; border:1px solid #334155; text-align:center;">
+            <small style="color:#94a3b8; font-size:0.65rem;">SET T/H</small><br>
+            <span style="color:#f59e0b; font-weight:700; font-size:1.1rem;"><span id="dispTempLimit"><?php echo $db_temp_limit; ?></span> / <span id="dispHumidLimit"><?php echo $db_humid_limit; ?></span></span>
         </div>
-    </aside>
 
-    <main class="main-content">
-        <header class="topbar">
-            <div style="font-weight:700;">Control & Debug Configuration</div>
-            <div id="mqttStatus" style="color:#94a3b8; font-size:0.75rem; font-weight:bold;">MQTT: OFFLINE</div>
-        </header>
-
-        <div class="grid-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-            
-            <div class="settings-card">
-                <h3>🕹️ Hardware & Alarm Logic</h3>
-                <div style="padding: 15px; border: 1px dashed var(--accent); border-radius: 12px; background: rgba(59, 130, 246, 0.05);">
-                    <h4 style="font-size: 0.8rem; color: var(--accent); margin-bottom: 10px;">🚨 Alarm Trigger Condition</h4>
-                    <select id="alarmMode" class="input-mini">
-                        <option value="average" <?= ($alarm_mode == 'average' ? 'selected' : '') ?>>Avg All > Global Threshold</option>
-                        <option value="individual" <?= ($alarm_mode == 'individual' ? 'selected' : '') ?>>Any Sensor > Individual Threshold</option>
-                    </select>
-
-                    <h4 style="font-size: 0.8rem; color: var(--accent); margin-top: 15px; margin-bottom: 5px;">📤 Warning Output Channels</h4>
-                    <div class="checkbox-group">
-                        <label class="checkbox-item"><input type="checkbox" id="enableLine" <?= ($alarm_line ? 'checked' : '') ?>> 📲 Line API Notification</label>
-                        <label class="checkbox-item"><input type="checkbox" id="enableLight" <?= ($alarm_light ? 'checked' : '') ?>> 🔴 MQTT Light (Auto Mode)</label>
-                    </div>
-
-                    <hr style="border: 0.5px solid #334155; margin: 15px 0;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 0.8rem; color: var(--orange);">Manual Light Switch</span>
-                        <label class="switch">
-                            <input type="checkbox" id="lightSwitch" onchange="publishLight(this.checked, true)">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <button class="alarm-submit-btn" onclick="saveAlarmLogic()">Submit Alarm Logic</button>
-                </div>
-            </div>
-
-            <div class="settings-card">
-                <h3>🔍 Raw Data Debug (Live)</h3>
-                <div id="debugConsole" class="debug-console">Waiting...</div>
-                <div style="margin-top: 10px; font-size: 0.75rem; color: #94a3b8;">
-                    Line Preview: <span id="msgPreview" style="color: #fff; font-weight:bold;">-- Normal --</span>
-                </div>
-            </div>
-
-            <div class="settings-card">
-                <h3>🌡️ Global System Threshold</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                    <div><small>Temp</small><input type="number" id="globalTemp" class="input-mini" value="<?=$global_temp?>" step="0.5"></div>
-                    <div><small>Humid</small><input type="number" id="globalHumid" class="input-mini" value="<?=$global_humid?>" step="1"></div>
-                </div>
-                <button class="save-btn" onclick="saveGlobalThreshold()">Save Global</button>
-            </div>
-
-            <div class="settings-card" style="border-left: 5px solid var(--line-green);">
-                <h3>📲 Manual Line Test</h3>
-                <input type="text" id="lineMsg" class="input-mini" value="🔔 [KBS DEBUG] Test Message">
-                <button class="save-btn" onclick="sendLineTest()" style="background: var(--line-green);">🚀 Send Test</button>
-            </div>
-
-            <div class="settings-card" style="grid-column: span 2;">
-                <h3>📍 Sensor Calibration (S1 - S5)</h3>
-                <table class="sensor-table">
-                    <thead>
-                        <tr><th>Sensor ID</th><th>Temp Limit</th><th>Humid Limit</th><th>Live</th></tr>
-                    </thead>
-                    <tbody>
-                        <?php for($i=1; $i<=5; $i++): ?>
-                        <tr>
-                            <td>Sensor 0<?=$i?></td>
-                            <td><input type="number" id="t_limit_<?=$i?>" class="input-mini" value="<?=number_format($sensor_configs[$i]['temp'], 1)?>"></td>
-                            <td><input type="number" id="h_limit_<?=$i?>" class="input-mini" value="<?=(int)$sensor_configs[$i]['humid']?>"></td>
-                            <td><div id="led<?=$i?>" class="lightbulb"></div></td>
-                        </tr>
-                        <?php endfor; ?>
-                    </tbody>
-                </table>
-                <button class="save-btn" style="background:var(--line-green);" onclick="saveIndividualThresholds()">💾 Update All to Database</button>
-            </div>
+        <div class="header-stat-box" style="border-color: rgba(16,185,129,0.3);">
+            <div style="font-size:0.65rem; color:#94a3b8;">H-MAX: <span id="hMaxVal" style="color:#ef4444;">--</span><br>H-MIN: <span id="hMinVal" style="color:#10b981;">--</span></div>
+            <span id="avgHumidTrendIcon" style="font-size:1.2rem;">━</span> <span id="avgHumidValue" style="color:#10b981; font-weight:800; font-size:1.4rem;">--</span>%
         </div>
-    </main>
 
-    <script>
-   // 1. ประกาศ Config (ใช้รูปแบบเดิมที่คุณส่งมา)
-const MQTT_CONFIG = {
-    url: '<?php echo $config["mqtt_ws_url"]; ?>',
-    user: '<?php echo $config["mqtt_user"]; ?>',
-    pass: '<?php echo $config["mqtt_pass"]; ?>',
-    topics: [
-        'kbs/driveroom1/temp1','kbs/driveroom1/temp2',
-        'kbs/driveroom1/temp3','kbs/driveroom1/temp4',
-        'kbs/driveroom1/temp5','kbs/driveroom1/light1',
-        'kbs/motordriveroom1/config_global',
-        'kbs/motordriveroom1/config_individual'
-    ]
+        <div class="header-stat-box" style="border-color: rgba(59,130,246,0.3);">
+            <div style="font-size:0.65rem; color:#94a3b8;">T-MAX: <span id="maxVal" style="color:#ef4444;">--</span><br>T-MIN: <span id="minVal" style="color:#10b981;">--</span></div>
+            <span id="avgTrendIcon" style="font-size:1.2rem;">━</span> <span id="avgTempValue" style="color:#3b82f6; font-weight:800; font-size:1.4rem;">--</span>°C
+        </div>
+        <div id="mqttStatus" style="font-size:0.8rem; font-weight:bold; color:#22c55e;">Online</div>
+      </div>
+    </header>
+
+    <div class="dashboard-grid">
+        <script>
+            const sensorNames = ["S1: Drive 1", "S2: Drive 2", "S3: Drive 3", "S4: Area 1"];
+            sensorNames.forEach((name, i) => {
+                document.write(`
+                    <div class="card" id="card${i+1}">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span id="status${i+1}" style="color:#64748b; font-size:1.2rem;">●</span>
+                                <span style="color:#fff; font-weight:bold; font-size:0.9rem;">${name}</span>
+                            </div>
+                            <div style="color:#f59e0b; font-size:0.75rem; font-weight:bold;">
+                                LMT: <span id="tLimit${i+1}">--</span> / <span id="hLimit${i+1}">--</span>
+                            </div>
+                        </div>
+
+                        <div style="display:flex; justify-content:center; flex:1; padding:10px 0;"><canvas id="gauge${i+1}"></canvas></div>
+                        
+                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:5px; font-size:0.65rem; text-align:center; border-top:1px solid #334155; padding-top:10px;">
+                            <div><small style="color:#94a3b8">T-MIN</small><br><b id="min${i+1}" style="color:#10b981">--</b></div>
+                            <div><small style="color:#94a3b8">T-AVG <span id="trend${i+1}">━</span></small><br><b id="avg${i+1}" style="color:#3b82f6">--</b></div>
+                            <div><small style="color:#94a3b8">T-MAX</small><br><b id="max${i+1}" style="color:#ef4444">--</b></div>
+                        </div>
+                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:5px; font-size:0.65rem; text-align:center; margin-top:8px; border-top:1px dashed #334155; padding-top:8px;">
+                            <div><small style="color:#94a3b8">H-MIN</small><br><b id="hmin${i+1}">--</b></div>
+                            <div><small style="color:#94a3b8">H-AVG</small><br><b id="havg${i+1}">--</b></div>
+                            <div><small style="color:#94a3b8">H-MAX</small><br><b id="hmax${i+1}">--</b></div>
+                        </div>
+                    </div>
+                `);
+            });
+        </script>
+    </div>
+
+    <div class="chart-container"><canvas id="trendChart"></canvas></div>
+</main>
+
+<script>
+/* === MQTT & DATA LOGIC (100% RESTORED) === */
+let individualThresholds = {
+    <?php for ($i=1;$i<=4;$i++) {
+        $t = isset($sensor_thresholds[$i]) ? $sensor_thresholds[$i]['temp'] : $db_temp_limit;
+        $h = isset($sensor_thresholds[$i]) ? $sensor_thresholds[$i]['humid'] : $db_humid_limit;
+        echo "$i: { temp: $t, humid: $h }".($i<4?",":"");
+    } ?>
 };
 
-// 2. การเชื่อมต่อ (ใช้รูปแบบเดิม)
-const client = mqtt.connect(MQTT_CONFIG.url, {
-    username: MQTT_CONFIG.user,
-    password: MQTT_CONFIG.pass,
-    clientId: 'KBS_' + Math.random().toString(16).substr(2, 8)
+const sensorLogs = {1:[],2:[],3:[],4:[]}, humidLogs = {1:[],2:[],3:[],4:[]};
+let globalMinT = Infinity, globalMaxT = -Infinity, globalMinH = Infinity, globalMaxH = -Infinity;
+
+const gauges = [1,2,3,4].map(id => new RadialGauge({
+    renderTo: `gauge${id}`, width: 220, height: 220, minValue: 0, maxValue: 100,
+    colorPlate: "#1e293b", colorNumbers: "#fff", borderShadowWidth: 0,
+    highlights: [{ from: 0, to: individualThresholds[id].temp, color: "rgba(13,224,97,.75)" }, { from: individualThresholds[id].temp, to: 100, color: "rgba(234,22,29,.75)" }]
+}).draw());
+
+const trendChart = new Chart(document.getElementById('trendChart'), {
+    type: 'line', data: { labels: [], datasets: [1,2,3,4].map((id,i) => ({ label: `S${id}`, data: [], borderColor: ['#3b82f6','#10b981','#f59e0b','#ef4444'][i], tension:0.3 })) },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#fff' } } } }
 });
 
-// 3. สถานะการเชื่อมต่อ (ยึดตาม Previous Worked Code)
+const client = mqtt.connect('<?php echo $config["mqtt_ws_url"]; ?>', { username: '<?php echo $config["mqtt_user"]; ?>', password: '<?php echo $config["mqtt_pass"]; ?>' });
+
 client.on('connect', () => {
-    console.log("✅ MQTT Online");
-    
-    // จัดการสีและข้อความตามโค้ดเดิมของคุณ
-    const dot = document.getElementById('mqttDot');
-    if (dot) dot.classList.add('connected');
-    
-    const statusEl = document.getElementById('mqttStatus');
-    if (statusEl) {
-        statusEl.innerText = "Online"; 
-        statusEl.style.color = "#22c55e";
-    }
-
-    // ✅ กู้คืนการ Subscribe แบบ Loop เดิม
-    MQTT_CONFIG.topics.forEach(t => {
-        client.subscribe(t);
-        console.log("Subscribed to:", t);
-    });
+    document.getElementById('mqttStatus').innerText = "Online";
+    [1,2,3,4].forEach(i => client.subscribe(`kbs/driveroom1/temp${i}`));
 });
 
-// 4. กรณีหลุดการเชื่อมต่อ
-client.on('close', () => {
-    const dot = document.getElementById('mqttDot');
-    if (dot) dot.classList.remove('connected');
-    
-    const statusEl = document.getElementById('mqttStatus');
-    if (statusEl) {
-        statusEl.innerText = "Offline";
-        statusEl.style.color = "#94a3b8";
-    }
-});
+client.on('message', (topic, payload) => {
+    try {
+        const js = JSON.parse(payload.toString());
+        const sID = parseInt(topic.split('temp')[1]);
+        if (sID >= 1 && sID <= 4) {
+            const val = parseFloat(js.temp), humid = parseFloat(js.humid);
+            
+            const card = document.getElementById(`card${sID}`);
+            if (val > individualThresholds[sID].temp) card.classList.add('high-temp-alert');
+            else card.classList.remove('high-temp-alert');
 
-        client.on('message', (topic, payload) => {
-            if(topic === 'kbs/driveroom1/light1') {
-                const status = payload.toString();
-                document.getElementById('lightSwitch').checked = (status === 'Active');
-                return;
-            }
-            const id = SENSOR_TOPICS.indexOf(topic) + 1;
-            if(id > 0) {
-                liveRawData[id] = JSON.parse(payload.toString());
-                document.getElementById(`led${id}`).style.background = "#22c55e";
-                document.getElementById('debugConsole').innerText = JSON.stringify(liveRawData, null, 2);
-                checkAndTriggerAlarm();
-            }
-        });
+            sensorLogs[sID].push(val); humidLogs[sID].push(humid);
+            if (sensorLogs[sID].length > 50) { sensorLogs[sID].shift(); humidLogs[sID].shift(); }
 
-        function checkAndTriggerAlarm() {
-            const mode = document.getElementById('alarmMode').value;
-            const lineEnabled = document.getElementById('enableLine').checked;
-            const lightEnabled = document.getElementById('enableLight').checked;
-            let isTriggered = false;
-            let warningMsg = "";
+            document.getElementById(`min${sID}`).innerText = Math.min(...sensorLogs[sID]).toFixed(1);
+            document.getElementById(`max${sID}`).innerText = Math.max(...sensorLogs[sID]).toFixed(1);
+            document.getElementById(`avg${sID}`).innerText = (sensorLogs[sID].reduce((a,b)=>a+b,0)/sensorLogs[sID].length).toFixed(1);
+            document.getElementById(`hmin${sID}`).innerText = Math.min(...humidLogs[sID]).toFixed(1);
+            document.getElementById(`hmax${sID}`).innerText = Math.max(...humidLogs[sID]).toFixed(1);
+            document.getElementById(`havg${sID}`).innerText = (humidLogs[sID].reduce((a,b)=>a+b,0)/humidLogs[sID].length).toFixed(1);
 
-            if (mode === 'average') {
-                const vals = Object.values(liveRawData);
-                if(vals.length === 0) return;
-                const avgT = vals.reduce((a, b) => a + parseFloat(b.temp), 0) / vals.length;
-                if (avgT > parseFloat(document.getElementById('globalTemp').value)) {
-                    isTriggered = true;
-                    warningMsg = `🚨 [AVG ALERT] Temp: ${avgT.toFixed(1)}°C`;
-                }
-            } else {
-                for (let id in liveRawData) {
-                    const t = parseFloat(liveRawData[id].temp), h = parseFloat(liveRawData[id].humid);
-                    const lt = parseFloat(document.getElementById(`t_limit_${id}`).value);
-                    const lh = parseFloat(document.getElementById(`h_limit_${id}`).value);
-                    if (t > lt || h > lh) {
-                        isTriggered = true;
-                        warningMsg = `⚠️ [SENSOR ${id}] T:${t} H:${h}`;
-                        break;
-                    }
-                }
-            }
+            if (val > globalMaxT) globalMaxT = val; if (val < globalMinT) globalMinT = val;
+            if (humid > globalMaxH) globalMaxH = humid; if (humid < globalMinH) globalMinH = humid;
+            document.getElementById('maxVal').innerText = globalMaxT.toFixed(1);
+            document.getElementById('minVal').innerText = globalMinT.toFixed(1);
+            document.getElementById('hMaxVal').innerText = globalMaxH.toFixed(1);
+            document.getElementById('hMinVal').innerText = globalMinH.toFixed(1);
+            
+            let allT = Object.values(sensorLogs).flat();
+            let allH = Object.values(humidLogs).flat();
+            document.getElementById('avgTempValue').innerText = (allT.reduce((a,b)=>a+b,0)/allT.length).toFixed(1);
+            document.getElementById('avgHumidValue').innerText = (allH.reduce((a,b)=>a+b,0)/allH.length).toFixed(1);
 
-            const previewEl = document.getElementById('msgPreview');
-            // --- 🕒 Confirm Logic 1 Minute ---
-            if (isTriggered) {
-                if (!isWaitingConfirm && lastAlarmStatus !== "Active") {
-                    isWaitingConfirm = true;
-                    previewEl.innerText = "⏳ Waiting 1 min confirm...";
-                    previewEl.style.color = var(--orange);
-                    alarmTimer = setTimeout(() => {
-                        if (lineEnabled) autoPushLine(warningMsg);
-                        if (lightEnabled && !isManualAction) publishLight(true, false);
-                        lastAlarmStatus = "Active";
-                        isWaitingConfirm = false;
-                        previewEl.innerText = warningMsg;
-                        previewEl.style.color = "#ef4444";
-                    }, 60000); 
-                }
-            } else {
-                clearTimeout(alarmTimer);
-                isWaitingConfirm = false;
-                if(lastAlarmStatus === "Active") {
-                    if (lightEnabled && !isManualAction) publishLight(false, false);
-                    lastAlarmStatus = "Unactive";
-                }
-                previewEl.innerText = "-- Normal --";
-                previewEl.style.color = "#22c55e";
-            }
+            gauges[sID-1].value = val;
+            document.getElementById(`status${sID}`).style.color = "#22c55e";
+            trendChart.update('none');
         }
-        function publishLight(state, isManual = false) {
-    if (isManual) { 
-        isManualAction = true; 
-        setTimeout(() => { isManualAction = false; }, 10000); 
-    }
+    } catch (e) {}
+});
 
-    const status = state ? "Active" : "Unactive";
-    const feedbackEl = document.getElementById('switchFeedback');
-
-    // 1. ส่ง MQTT ทันที
-    client.publish("kbs/driveroom1/light1", status, { qos: 1, retain: true });
-
-    // 2. อัปเดตข้อความใต้ปุ่มทันทีเพื่อให้คุณมั่นใจ
-    if (feedbackEl) {
-        feedbackEl.innerText = "Sending: " + status + "...";
-        feedbackEl.style.color = "#3b82f6"; // สีน้ำเงินระหว่างส่ง
-    }
-
-    // 3. ✅ แก้ไข Fetch: ตรวจสอบว่า Path ถูกต้องและส่งตัวแปร status
-    // หมายเหตุ: ตรวจสอบว่าไฟล์ update_status.php ของคุณรับค่าผ่าน $_GET['status']
-    fetch(`/pages/firepump/update_status.php?status=${status}`)
-        .then(response => response.text())
-        .then(data => {
-            console.log("Server Response:", data);
-            if (feedbackEl) {
-                feedbackEl.innerText = "Sent: " + status + " (DB Updated)";
-                feedbackEl.style.color = (state ? "#f59e0b" : "#22c55e"); // ส้มถ้าติด เขียวถ้าดับ
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            if (feedbackEl) {
-                feedbackEl.innerText = "Error updating DB!";
-                feedbackEl.style.color = "#ef4444"; // แดงถ้าผิดพลาด
-            }
-        });
+setInterval(() => { document.getElementById('realtimeClock').innerText = new Date().toLocaleString('th-TH'); }, 1000);
+for(let k=1;k<=4;k++){
+    document.getElementById(`tLimit${k}`).innerText = individualThresholds[k].temp.toFixed(1); 
+    document.getElementById(`hLimit${k}`).innerText = individualThresholds[k].humid.toFixed(1); 
 }
-
-        // --- ฟังก์ชันเสริมอื่นๆ คงเดิมตามที่คุณส่งมา ---
-        function autoPushLine(msg) {
-            const fd = new FormData(); fd.append('action', 'test_line_api'); fd.append('message', msg);
-            fetch('', { method: 'POST', body: fd });
-        }
-        function saveAlarmLogic() {
-            const mode = document.getElementById('alarmMode').value;
-            const lineOn = document.getElementById('enableLine').checked ? 1 : 0;
-            const lightOn = document.getElementById('enableLight').checked ? 1 : 0;
-            client.publish("kbs/motordriveroom1/config_individual", JSON.stringify({ type: 'alarm_logic_update', alarm_mode: mode, alarm_line: lineOn, alarm_light: lightOn }), { qos: 1, retain: true });
-            alert("✅ Saved Logic");
-        }
-        function saveIndividualThresholds() {
-            let sensors = [];
-            for(let i=1; i<=5; i++) {
-                sensors.push({ sensor_id: i, temp_threshold: parseFloat(document.getElementById(`t_limit_${i}`).value), humid_threshold: parseFloat(document.getElementById(`h_limit_${i}`).value) });
-            }
-            client.publish("kbs/motordriveroom1/config_individual", JSON.stringify({ type: 'individual', sensors: sensors }), { qos: 1 });
-            alert("💾 Saved Individual");
-        }
-        function saveGlobalThreshold() {
-            const t = document.getElementById('globalTemp').value, h = document.getElementById('globalHumid').value;
-            client.publish("kbs/motordriveroom1/config_individual", JSON.stringify({ type: 'global', sensor_id: 0, temp_threshold: parseFloat(t), humid_threshold: parseFloat(h) }), { qos: 1, retain: true });
-            alert("💾 Saved Global");
-        }
-        function sendLineTest() {
-            const msg = document.getElementById('lineMsg').value;
-            const fd = new FormData(); fd.append('action', 'test_line_api'); fd.append('message', msg);
-            fetch('', { method: 'POST', body: fd }).then(r => r.json()).then(d => alert(d.status === 200 ? "Sent!" : "Error"));
-        }
-    </script>
+</script>
 </body>
 </html>
